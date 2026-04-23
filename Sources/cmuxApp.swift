@@ -150,6 +150,7 @@ struct cmuxApp: App {
     @AppStorage(KeyboardShortcutSettings.Action.newTab.defaultsKey) private var newWorkspaceShortcutData = Data()
     @AppStorage(KeyboardShortcutSettings.Action.newWindow.defaultsKey) private var newWindowShortcutData = Data()
     @AppStorage(KeyboardShortcutSettings.Action.showNotifications.defaultsKey) private var showNotificationsShortcutData = Data()
+    @AppStorage(KeyboardShortcutSettings.Action.showFileExplorer.defaultsKey) private var showFileExplorerShortcutData = Data()
     @AppStorage(KeyboardShortcutSettings.Action.jumpToUnread.defaultsKey) private var jumpToUnreadShortcutData = Data()
     @AppStorage(KeyboardShortcutSettings.Action.nextSurface.defaultsKey) private var nextSurfaceShortcutData = Data()
     @AppStorage(KeyboardShortcutSettings.Action.prevSurface.defaultsKey) private var prevSurfaceShortcutData = Data()
@@ -167,6 +168,9 @@ struct cmuxApp: App {
     @AppStorage(KeyboardShortcutSettings.Action.renameWorkspace.defaultsKey) private var renameWorkspaceShortcutData = Data()
     @AppStorage(KeyboardShortcutSettings.Action.openFolder.defaultsKey) private var openFolderShortcutData = Data()
     @AppStorage(KeyboardShortcutSettings.Action.closeWorkspace.defaultsKey) private var closeWorkspaceShortcutData = Data()
+    @AppStorage(KeyboardShortcutSettings.Action.zoomIn.defaultsKey) private var zoomInShortcutData = Data()
+    @AppStorage(KeyboardShortcutSettings.Action.zoomOut.defaultsKey) private var zoomOutShortcutData = Data()
+    @AppStorage(KeyboardShortcutSettings.Action.zoomReset.defaultsKey) private var zoomResetShortcutData = Data()
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     private var browserToolbarAccessorySpacing: Int {
@@ -741,20 +745,23 @@ struct cmuxApp: App {
                     }
                 }
 
-                Button(String(localized: "menu.view.zoomIn", defaultValue: "Zoom In")) {
-                    _ = activeTabManager.zoomInFocusedBrowser()
+                splitCommandButton(title: String(localized: "menu.view.zoomIn", defaultValue: "Zoom In"), shortcut: zoomInMenuShortcut) {
+                    if !activeTabManager.zoomInFocusedBrowser() {
+                        zoomFocusedTerminal(.zoomIn)
+                    }
                 }
-                .keyboardShortcut("=", modifiers: .command)
 
-                Button(String(localized: "menu.view.zoomOut", defaultValue: "Zoom Out")) {
-                    _ = activeTabManager.zoomOutFocusedBrowser()
+                splitCommandButton(title: String(localized: "menu.view.zoomOut", defaultValue: "Zoom Out"), shortcut: zoomOutMenuShortcut) {
+                    if !activeTabManager.zoomOutFocusedBrowser() {
+                        zoomFocusedTerminal(.zoomOut)
+                    }
                 }
-                .keyboardShortcut("-", modifiers: .command)
 
-                Button(String(localized: "menu.view.actualSize", defaultValue: "Actual Size")) {
-                    _ = activeTabManager.resetZoomFocusedBrowser()
+                splitCommandButton(title: String(localized: "menu.view.actualSize", defaultValue: "Actual Size"), shortcut: zoomResetMenuShortcut) {
+                    if !activeTabManager.resetZoomFocusedBrowser() {
+                        zoomFocusedTerminal(.reset)
+                    }
                 }
-                .keyboardShortcut("0", modifiers: .command)
 
                 Button(String(localized: "menu.view.clearBrowserHistory", defaultValue: "Clear Browser History")) {
                     BrowserHistoryStore.shared.clearHistory()
@@ -818,6 +825,10 @@ struct cmuxApp: App {
 
                 splitCommandButton(title: String(localized: "menu.view.showNotifications", defaultValue: "Show Notifications"), shortcut: showNotificationsMenuShortcut) {
                     showNotificationsPopover()
+                }
+
+                splitCommandButton(title: String(localized: "menu.view.showFileExplorer", defaultValue: "Show File Explorer"), shortcut: showFileExplorerMenuShortcut) {
+                    showFileExplorerPopover()
                 }
             }
         }
@@ -889,6 +900,13 @@ struct cmuxApp: App {
         decodeShortcut(
             from: showNotificationsShortcutData,
             fallback: KeyboardShortcutSettings.Action.showNotifications.defaultShortcut
+        )
+    }
+
+    private var showFileExplorerMenuShortcut: StoredShortcut {
+        decodeShortcut(
+            from: showFileExplorerShortcutData,
+            fallback: KeyboardShortcutSettings.Action.showFileExplorer.defaultShortcut
         )
     }
 
@@ -967,6 +985,18 @@ struct cmuxApp: App {
         )
     }
 
+    private var zoomInMenuShortcut: StoredShortcut {
+        decodeShortcut(from: zoomInShortcutData, fallback: KeyboardShortcutSettings.Action.zoomIn.defaultShortcut)
+    }
+
+    private var zoomOutMenuShortcut: StoredShortcut {
+        decodeShortcut(from: zoomOutShortcutData, fallback: KeyboardShortcutSettings.Action.zoomOut.defaultShortcut)
+    }
+
+    private var zoomResetMenuShortcut: StoredShortcut {
+        decodeShortcut(from: zoomResetShortcutData, fallback: KeyboardShortcutSettings.Action.zoomReset.defaultShortcut)
+    }
+
     private var notificationMenuSnapshot: NotificationMenuSnapshot {
         NotificationMenuSnapshotBuilder.make(notifications: notificationStore.notifications)
     }
@@ -975,6 +1005,19 @@ struct cmuxApp: App {
         AppDelegate.shared?.synchronizeActiveMainWindowContext(
             preferredWindow: NSApp.keyWindow ?? NSApp.mainWindow
         ) ?? tabManager
+    }
+
+    private func zoomFocusedTerminal(_ action: BrowserZoomShortcutAction) {
+        guard let firstResponder = NSApp.keyWindow?.firstResponder,
+              let ghosttyView = cmuxOwningGhosttyView(for: firstResponder),
+              let surface = ghosttyView.terminalSurface?.surface else { return }
+        let bindingAction: String
+        switch action {
+        case .zoomIn: bindingAction = "increase_font_size:1"
+        case .zoomOut: bindingAction = "decrease_font_size:1"
+        case .reset: bindingAction = "reset_font_size"
+        }
+        ghostty_surface_binding_action(surface, bindingAction, UInt(bindingAction.utf8.count))
     }
 
     private func decodeShortcut(from data: Data, fallback: StoredShortcut) -> StoredShortcut {
@@ -1230,6 +1273,10 @@ struct cmuxApp: App {
 
     private func showNotificationsPopover() {
         AppDelegate.shared?.toggleNotificationsPopover(animated: false)
+    }
+
+    private func showFileExplorerPopover() {
+        AppDelegate.shared?.toggleFileExplorer()
     }
 
     private func openAllDebugWindows() {

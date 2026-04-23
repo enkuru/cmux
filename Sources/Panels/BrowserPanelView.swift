@@ -441,12 +441,19 @@ struct BrowserPanelView: View {
         return currentPaneId.id == paneId.id
     }
 
+    /// Hide the address bar for internal cmux diff views
+    private var isCmuxDiffView: Bool {
+        panel.currentURL?.path.contains("cmux-diffs") == true
+    }
+
     var body: some View {
         // Layering contract: browser Cmd+F UI is mounted in the portal-hosted AppKit
         // container. Rendering it here can hide it behind the portal-hosted WKWebView.
         VStack(spacing: 0) {
-            addressBar
-                .fixedSize(horizontal: false, vertical: true)
+            if !isCmuxDiffView {
+                addressBar
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             webView
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)

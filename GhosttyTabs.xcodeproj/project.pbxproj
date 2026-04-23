@@ -34,7 +34,10 @@
 		A5007420 /* BrowserPopupWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5007421 /* BrowserPopupWindowController.swift */; };
 		A5001420 /* MarkdownPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5001418 /* MarkdownPanel.swift */; };
 		A5001421 /* MarkdownPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5001419 /* MarkdownPanelView.swift */; };
+		A5E1C3AE /* DiffPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5140194 /* DiffPanel.swift */; };
+		A5C980A7 /* DiffPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5A6DEC8 /* DiffPanelView.swift */; };
 		A5001290 /* MarkdownUI in Frameworks */ = {isa = PBXBuildFile; productRef = A5001291 /* MarkdownUI */; };
+		A5D1FF01 /* Highlightr in Frameworks */ = {isa = PBXBuildFile; productRef = A5D1FF02 /* Highlightr */; };
 		A5001405 /* PanelContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5001415 /* PanelContentView.swift */; };
 		A5001406 /* Workspace.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5001416 /* Workspace.swift */; };
 		A5001407 /* WorkspaceContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5001417 /* WorkspaceContentView.swift */; };
@@ -67,6 +70,11 @@
 		A5001209 /* WindowToolbarController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5001219 /* WindowToolbarController.swift */; };
 		A5001240 /* WindowDecorationsController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5001241 /* WindowDecorationsController.swift */; };
 		A5001610 /* SessionPersistence.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5001611 /* SessionPersistence.swift */; };
+		A5001660 /* ProjectGroup.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5001661 /* ProjectGroup.swift */; };
+		A5001670 /* MissionControlView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5001671 /* MissionControlView.swift */; };
+		A5001672 /* AgentCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5001673 /* AgentCardView.swift */; };
+		A5001680 /* WorktreeDropdown.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5001681 /* WorktreeDropdown.swift */; };
+		A5001682 /* WorktreeBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5001683 /* WorktreeBadge.swift */; };
 		A5001640 /* RemoteRelayZshBootstrap.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5001641 /* RemoteRelayZshBootstrap.swift */; };
 		A5001100 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A5001101 /* Assets.xcassets */; };
 		A5001230 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = A5001231 /* Sparkle */; };
@@ -123,7 +131,15 @@
 					CA39C0304FE351A21C372429 /* SidebarWidthPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE0171AF1F49F7547191CEE5 /* SidebarWidthPolicyTests.swift */; };
 					8C4BBF2DEF6DF93F395A9EE7 /* TerminalControllerSocketSecurityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 491751CE2321474474F27DCF /* TerminalControllerSocketSecurityTests.swift */; };
 					2BB56A710BB1FC50367E5BCF /* TabManagerSessionSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10D684CFFB8CDEF89CE2D9E1 /* TabManagerSessionSnapshotTests.swift */; };
-		/* End PBXBuildFile section */
+			FE000001 /* FileTreeModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE000011 /* FileTreeModel.swift */; };
+		FE000002 /* ActiveSessionMatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE000012 /* ActiveSessionMatcher.swift */; };
+		FE000003 /* FileExplorerSidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE000013 /* FileExplorerSidebar.swift */; };
+		FE000004 /* FileTreeRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE000014 /* FileTreeRowView.swift */; };
+		FE000005 /* ChangesPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE000015 /* ChangesPanelView.swift */; };
+		FE000006 /* CmuxDiffMessageHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE000016 /* CmuxDiffMessageHandler.swift */; };
+		FE000007 /* IDEMCPServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE000017 /* IDEMCPServer.swift */; };
+		FE000008 /* IDEDiffEditorPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE000018 /* IDEDiffEditorPanel.swift */; };
+	/* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
 		A5001020 /* Embed Frameworks */ = {
@@ -210,6 +226,8 @@
 		A5001415 /* PanelContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Panels/PanelContentView.swift; sourceTree = "<group>"; };
 		A5001418 /* MarkdownPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Panels/MarkdownPanel.swift; sourceTree = "<group>"; };
 		A5001419 /* MarkdownPanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Panels/MarkdownPanelView.swift; sourceTree = "<group>"; };
+		A5140194 /* DiffPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Panels/DiffPanel.swift; sourceTree = "<group>"; };
+		A5A6DEC8 /* DiffPanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Panels/DiffPanelView.swift; sourceTree = "<group>"; };
 		A5001416 /* Workspace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Workspace.swift; sourceTree = "<group>"; };
 		A5001417 /* WorkspaceContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceContentView.swift; sourceTree = "<group>"; };
 		A5001090 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
@@ -237,6 +255,11 @@
 		A5001223 /* UpdateLogStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Update/UpdateLogStore.swift; sourceTree = "<group>"; };
 		A5001241 /* WindowDecorationsController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowDecorationsController.swift; sourceTree = "<group>"; };
 		A5001611 /* SessionPersistence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionPersistence.swift; sourceTree = "<group>"; };
+		A5001661 /* ProjectGroup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectGroup.swift; sourceTree = "<group>"; };
+		A5001671 /* MissionControlView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MissionControlView.swift; sourceTree = "<group>"; };
+		A5001673 /* AgentCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentCardView.swift; sourceTree = "<group>"; };
+		A5001681 /* WorktreeDropdown.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorktreeDropdown.swift; sourceTree = "<group>"; };
+		A5001683 /* WorktreeBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorktreeBadge.swift; sourceTree = "<group>"; };
 		A5001641 /* RemoteRelayZshBootstrap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteRelayZshBootstrap.swift; sourceTree = "<group>"; };
 		818DBCD4AB69EB72573E8138 /* SidebarResizeUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarResizeUITests.swift; sourceTree = "<group>"; };
 		B8F266256A1A3D9A45BD840F /* SidebarHelpMenuUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarHelpMenuUITests.swift; sourceTree = "<group>"; };
@@ -292,6 +315,14 @@
 				EE0171AF1F49F7547191CEE5 /* SidebarWidthPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarWidthPolicyTests.swift; sourceTree = "<group>"; };
 				491751CE2321474474F27DCF /* TerminalControllerSocketSecurityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalControllerSocketSecurityTests.swift; sourceTree = "<group>"; };
 				10D684CFFB8CDEF89CE2D9E1 /* TabManagerSessionSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabManagerSessionSnapshotTests.swift; sourceTree = "<group>"; };
+		FE000011 /* FileTreeModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Sources/FileExplorer/FileTreeModel.swift"; sourceTree = "<group>"; };
+		FE000012 /* ActiveSessionMatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Sources/FileExplorer/ActiveSessionMatcher.swift"; sourceTree = "<group>"; };
+		FE000013 /* FileExplorerSidebar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Sources/FileExplorer/FileExplorerSidebar.swift"; sourceTree = "<group>"; };
+		FE000014 /* FileTreeRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Sources/FileExplorer/FileTreeRowView.swift"; sourceTree = "<group>"; };
+		FE000015 /* ChangesPanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Sources/FileExplorer/ChangesPanelView.swift"; sourceTree = "<group>"; };
+		FE000016 /* CmuxDiffMessageHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Sources/FileExplorer/CmuxDiffMessageHandler.swift"; sourceTree = "<group>"; };
+		FE000017 /* IDEMCPServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Sources/IDEServer/IDEMCPServer.swift"; sourceTree = "<group>"; };
+		FE000018 /* IDEDiffEditorPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Sources/IDEServer/IDEDiffEditorPanel.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -304,6 +335,7 @@
 					A5001250 /* Sentry in Frameworks */,
 					A5001270 /* PostHog in Frameworks */,
 					A5001290 /* MarkdownUI in Frameworks */,
+					A5D1FF01 /* Highlightr in Frameworks */,
 				);
 				runOnlyForDeploymentPostprocessing = 0;
 			};
@@ -439,6 +471,8 @@
 				A5007421 /* BrowserPopupWindowController.swift */,
 				A5001418 /* MarkdownPanel.swift */,
 				A5001419 /* MarkdownPanelView.swift */,
+				A5140194 /* DiffPanel.swift */,
+				A5A6DEC8 /* DiffPanelView.swift */,
 				A5001510 /* CmuxWebView.swift */,
 				A5001415 /* PanelContentView.swift */,
 				A5001211 /* UpdateController.swift */,
@@ -457,6 +491,11 @@
 				A5001241 /* WindowDecorationsController.swift */,
 				A5001222 /* WindowAccessor.swift */,
 				A5001611 /* SessionPersistence.swift */,
+				A5001661 /* ProjectGroup.swift */,
+				A5001671 /* MissionControlView.swift */,
+				A5001673 /* AgentCardView.swift */,
+				A5001681 /* WorktreeDropdown.swift */,
+				A5001683 /* WorktreeBadge.swift */,
 				A5001641 /* RemoteRelayZshBootstrap.swift */,
 			);
 			path = Sources;
@@ -576,6 +615,7 @@
 					A5001271 /* PostHog */,
 					A5001261 /* Bonsplit */,
 					A5001291 /* MarkdownUI */,
+					A5D1FF02 /* Highlightr */,
 				);
 			name = GhosttyTabs;
 			productName = GhosttyTabs;
@@ -679,6 +719,7 @@
 					A5001272 /* XCRemoteSwiftPackageReference "posthog-ios" */,
 					A5001292 /* XCRemoteSwiftPackageReference "swift-markdown-ui" */,
 					A5001260 /* XCLocalSwiftPackageReference "bonsplit" */,
+					A5D1FF03 /* XCRemoteSwiftPackageReference "Highlightr" */,
 				);
 			productRefGroup = A5001042 /* Products */;
 			projectDirPath = "";
@@ -722,6 +763,14 @@
 				A5001621 /* AppleScriptSupport.swift in Sources */,
 				A5001093 /* AppDelegate.swift in Sources */,
 				A5001094 /* NotificationsPage.swift in Sources */,
+				FE000001 /* FileTreeModel.swift in Sources */,
+				FE000002 /* ActiveSessionMatcher.swift in Sources */,
+				FE000003 /* FileExplorerSidebar.swift in Sources */,
+				FE000004 /* FileTreeRowView.swift in Sources */,
+				FE000005 /* ChangesPanelView.swift in Sources */,
+				FE000006 /* CmuxDiffMessageHandler.swift in Sources */,
+				FE000007 /* IDEMCPServer.swift in Sources */,
+				FE000008 /* IDEDiffEditorPanel.swift in Sources */,
 				A5001095 /* TerminalNotificationStore.swift in Sources */,
 				A5001303 /* SurfaceSearchOverlay.swift in Sources */,
 				A5008371 /* BrowserSearchOverlay.swift in Sources */,
@@ -734,6 +783,8 @@
 				A5007420 /* BrowserPopupWindowController.swift in Sources */,
 				A5001420 /* MarkdownPanel.swift in Sources */,
 				A5001421 /* MarkdownPanelView.swift in Sources */,
+				A5E1C3AE /* DiffPanel.swift in Sources */,
+				A5C980A7 /* DiffPanelView.swift in Sources */,
 				A5001500 /* CmuxWebView.swift in Sources */,
 				A5001405 /* PanelContentView.swift in Sources */,
 				A5001201 /* UpdateController.swift in Sources */,
@@ -752,6 +803,11 @@
 				A5001240 /* WindowDecorationsController.swift in Sources */,
 				A500120C /* WindowAccessor.swift in Sources */,
 				A5001610 /* SessionPersistence.swift in Sources */,
+				A5001660 /* ProjectGroup.swift in Sources */,
+				A5001670 /* MissionControlView.swift in Sources */,
+				A5001672 /* AgentCardView.swift in Sources */,
+				A5001680 /* WorktreeDropdown.swift in Sources */,
+				A5001682 /* WorktreeBadge.swift in Sources */,
 				A5001640 /* RemoteRelayZshBootstrap.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -1132,6 +1188,14 @@
 				isa = XCLocalSwiftPackageReference;
 				relativePath = vendor/bonsplit;
 			};
+			A5D1FF03 /* XCRemoteSwiftPackageReference "Highlightr" */ = {
+				isa = XCRemoteSwiftPackageReference;
+				repositoryURL = "https://github.com/raspu/Highlightr.git";
+				requirement = {
+					kind = upToNextMajorVersion;
+					minimumVersion = 2.2.1;
+				};
+			};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -1159,6 +1223,11 @@
 				isa = XCSwiftPackageProductDependency;
 				package = A5001292 /* XCRemoteSwiftPackageReference "swift-markdown-ui" */;
 				productName = MarkdownUI;
+			};
+			A5D1FF02 /* Highlightr */ = {
+				isa = XCSwiftPackageProductDependency;
+				package = A5D1FF03 /* XCRemoteSwiftPackageReference "Highlightr" */;
+				productName = Highlightr;
 			};
 /* End XCSwiftPackageProductDependency section */
 

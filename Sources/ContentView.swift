@@ -2074,14 +2074,91 @@ struct ContentView: View {
         }
     }
 
+    @AppStorage(SidebarSelectionState.selectionKey) private var isSidebarFileExplorerActive = false
+    @StateObject private var sharedTreeModel = FileTreeModel(rootPath: "~")
+
     private var sidebarView: some View {
-        VerticalTabsSidebar(
-            updateViewModel: updateViewModel,
-            onSendFeedback: presentFeedbackComposer,
-            selection: $sidebarSelectionState.selection,
-            selectedTabIds: $selectedTabIds,
-            lastSidebarSelectionIndex: $lastSidebarSelectionIndex
-        )
+        Group {
+            switch sidebarSelectionState.selection {
+            case .files:
+                FileExplorerSidebar(
+                    selection: $sidebarSelectionState.selection,
+                    treeModel: sharedTreeModel
+                )
+            case .changes:
+                ChangesPanelView(
+                    selection: $sidebarSelectionState.selection,
+                    treeModel: sharedTreeModel
+                )
+            case .missionControl:
+                MissionControlView(
+                    workspaceInfos: ActiveSessionMatcher.workspaceDirectoryInfos(
+                        from: tabManager.tabs,
+                        selectedTabId: tabManager.selectedTabId
+                    ),
+                    selectedTabId: tabManager.selectedTabId,
+                    onSelectWorkspace: { id in
+                        if let tab = tabManager.tabs.first(where: { $0.id == id }) {
+                            tabManager.selectTab(tab)
+                        }
+                    }
+                )
+            default:
+                VerticalTabsSidebar(
+                    updateViewModel: updateViewModel,
+                    onSendFeedback: presentFeedbackComposer,
+                    selection: $sidebarSelectionState.selection,
+                    selectedTabIds: $selectedTabIds,
+                    lastSidebarSelectionIndex: $lastSidebarSelectionIndex
+                )
+            }
+        }
+        .overlay(alignment: .topTrailing) {
+            HStack(spacing: 6) {
+                Button(action: { sidebarSelectionState.selection = .tabs }) {
+                    Image(systemName: "rectangle.stack")
+                        .font(.system(size: 11, weight: .semibold))
+                        .symbolRenderingMode(.monochrome)
+                        .foregroundStyle(sidebarSelectionState.selection == .tabs ? cmuxAccentColor() : Color.secondary)
+                        .frame(width: 20, height: 20)
+                }
+                .buttonStyle(.plain)
+
+                Button(action: { AppDelegate.shared?.toggleFileExplorer() }) {
+                    Image(systemName: "folder")
+                        .font(.system(size: 11, weight: .semibold))
+                        .symbolRenderingMode(.monochrome)
+                        .foregroundStyle(sidebarSelectionState.selection == .files ? cmuxAccentColor() : Color.secondary)
+                        .frame(width: 20, height: 20)
+                }
+                .buttonStyle(.plain)
+
+                Button(action: {
+                    sidebarSelectionState.selection = sidebarSelectionState.selection == .changes ? .tabs : .changes
+                }) {
+                    Image(systemName: "doc.badge.clock")
+                        .font(.system(size: 11, weight: .semibold))
+                        .symbolRenderingMode(.monochrome)
+                        .foregroundStyle(sidebarSelectionState.selection == .changes ? cmuxAccentColor() : Color.secondary)
+                        .frame(width: 20, height: 20)
+                }
+                .buttonStyle(.plain)
+
+                Button(action: {
+                    sidebarSelectionState.selection = sidebarSelectionState.selection == .missionControl ? .tabs : .missionControl
+                }) {
+                    Image(systemName: "square.grid.2x2")
+                        .font(.system(size: 11, weight: .semibold))
+                        .symbolRenderingMode(.monochrome)
+                        .foregroundStyle(sidebarSelectionState.selection == .missionControl ? cmuxAccentColor() : Color.secondary)
+                        .frame(width: 20, height: 20)
+                }
+                .buttonStyle(.plain)
+                .help(String(localized: "sidebar.mission.control.tooltip", defaultValue: "Mission Control (⌘M)"))
+            }
+            .padding(.top, 6)
+            .padding(.trailing, 6)
+        }
         .frame(width: sidebarWidth)
         .frame(maxHeight: .infinity, alignment: .topLeading)
     }
@@ -2147,9 +2224,9 @@ struct ContentView: View {
                     }
                 }
             }
-            .opacity(sidebarSelectionState.selection == .tabs ? 1 : 0)
-            .allowsHitTesting(sidebarSelectionState.selection == .tabs)
-            .accessibilityHidden(sidebarSelectionState.selection != .tabs)
+            .opacity(sidebarSelectionState.selection != .notifications ? 1 : 0)
+            .allowsHitTesting(sidebarSelectionState.selection != .notifications)
+            .accessibilityHidden(sidebarSelectionState.selection == .notifications)
 
             NotificationsPage(selection: $sidebarSelectionState.selection)
                 .opacity(sidebarSelectionState.selection == .notifications ? 1 : 0)
@@ -4748,6 +4825,8 @@ struct ContentView: View {
             return String(localized: "commandPalette.kind.browser", defaultValue: "Browser")
         case .markdown:
             return String(localized: "commandPalette.kind.markdown", defaultValue: "Markdown")
+        case .diff:
+            return String(localized: "commandPalette.kind.diff", defaultValue: "Diff")
         }
     }
 
@@ -4759,6 +4838,8 @@ struct ContentView: View {
             return ["browser", "web", "page"]
         case .markdown:
             return ["markdown", "note", "preview"]
+        case .diff:
+            return ["diff", "changes", "review"]
         }
     }
 
@@ -4862,6 +4943,8 @@ struct ContentView: View {
             return .toggleSidebar
         case "palette.showNotifications":
             return .showNotifications
+        case "palette.showFileExplorer":
+            return .showFileExplorer
         case "palette.jumpUnread":
             return .jumpToUnread
         case "palette.renameTab":
@@ -5179,6 +5262,14 @@ struct ContentView: View {
                 title: constant(String(localized: "command.showNotifications.title", defaultValue: "Show Notifications")),
                 subtitle: constant(String(localized: "command.showNotifications.subtitle", defaultValue: "Notifications")),
                 keywords: ["notifications", "inbox"]
+            )
+        )
+        contributions.append(
+            CommandPaletteCommandContribution(
+                commandId: "palette.showFileExplorer",
+                title: constant(String(localized: "command.showFileExplorer.title", defaultValue: "Show File Explorer")),
+                subtitle: constant(String(localized: "command.showFileExplorer.subtitle", defaultValue: "Sidebar")),
+                keywords: ["files", "folders", "explorer", "tree", "browse"]
             )
         )
         contributions.append(
@@ -5796,6 +5887,9 @@ struct ContentView: View {
         registry.register(commandId: "palette.showNotifications") {
             AppDelegate.shared?.toggleNotificationsPopover(animated: false)
         }
+        registry.register(commandId: "palette.showFileExplorer") {
+            AppDelegate.shared?.toggleFileExplorer()
+        }
         registry.register(commandId: "palette.jumpUnread") {
             AppDelegate.shared?.jumpToLatestUnread()
         }
@@ -6062,7 +6156,13 @@ struct ContentView: View {
             return custom
         }
         let title = workspace.title.trimmingCharacters(in: .whitespacesAndNewlines)
-        return title.isEmpty ? String(localized: "workspace.displayName.fallback", defaultValue: "Workspace") : title
+        let folderName = (workspace.currentDirectory as NSString).lastPathComponent
+        let baseTitle = title.isEmpty ? String(localized: "workspace.displayName.fallback", defaultValue: "Workspace") : title
+        // Show "folder — process" when process title differs from folder name
+        if !folderName.isEmpty, folderName != baseTitle {
+            return "\(folderName) — \(baseTitle)"
+        }
+        return baseTitle
     }
 
     private func panelDisplayName(workspace: Workspace, panelId: UUID, fallback: String) -> String {
@@ -8179,6 +8279,7 @@ struct VerticalTabsSidebar: View {
     @StateObject private var modifierKeyMonitor = SidebarShortcutHintModifierMonitor()
     @StateObject private var dragAutoScrollController = SidebarDragAutoScrollController()
     @StateObject private var dragFailsafeMonitor = SidebarDragFailsafeMonitor()
+    @StateObject private var projectGrouping = ProjectGrouping()
     @State private var draggedTabId: UUID?
     @State private var dropIndicator: SidebarDropIndicator?
     @AppStorage(SidebarWorkspaceDetailSettings.hideAllDetailsKey)
@@ -8217,49 +8318,56 @@ struct VerticalTabsSidebar: View {
                             .frame(height: trafficLightPadding)
 
                         LazyVStack(spacing: tabRowSpacing) {
-                            ForEach(Array(tabManager.tabs.enumerated()), id: \.element.id) { index, tab in
-                                let selectedContextIds: Set<UUID> = selectedTabIds.contains(tab.id) ? selectedTabIds : [tab.id]
-                                let contextTargetIds = tabManager.tabs.compactMap { workspace in
-                                    selectedContextIds.contains(workspace.id) ? workspace.id : nil
-                                }
-                                let remoteContextMenuTargets = tabManager.tabs.filter { workspace in
-                                    contextTargetIds.contains(workspace.id) && workspace.isRemoteWorkspace
-                                }
-                                TabItemView(
-                                    tabManager: tabManager,
-                                    notificationStore: notificationStore,
-                                    tab: tab,
-                                    index: index,
-                                    isActive: tabManager.selectedTabId == tab.id,
-                                    workspaceShortcutDigit: WorkspaceShortcutMapper.commandDigitForWorkspace(
-                                        at: index,
-                                        workspaceCount: workspaceCount
-                                    ),
-                                    canCloseWorkspace: canCloseWorkspace,
-                                    accessibilityWorkspaceCount: workspaceCount,
-                                    unreadCount: notificationStore.unreadCount(forTabId: tab.id),
-                                    latestNotificationText: {
-                                        guard showsSidebarNotificationMessage,
-                                              let notification = notificationStore.latestNotification(forTabId: tab.id) else {
-                                            return nil
+                            // Grouped projects
+                            ForEach(projectGrouping.groups) { group in
+                                ProjectHeaderView(
+                                    group: group,
+                                    isCollapsed: projectGrouping.isCollapsed(group.id),
+                                    onToggle: { projectGrouping.toggleCollapsed(group.id) },
+                                    onCreateWorktree: { branch in
+                                        projectGrouping.createWorktree(branch: branch, in: group.directory) { result in
+                                            if case .success(let wtPath) = result {
+                                                tabManager.addWorkspace(workingDirectory: wtPath)
+                                            }
                                         }
-                                        let text = notification.body.isEmpty ? notification.title : notification.body
-                                        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-                                        return trimmed.isEmpty ? nil : trimmed
-                                    }(),
-                                    rowSpacing: tabRowSpacing,
-                                    setSelectionToTabs: { selection = .tabs },
-                                    selectedTabIds: $selectedTabIds,
-                                    lastSidebarSelectionIndex: $lastSidebarSelectionIndex,
-                                    showsModifierShortcutHints: modifierKeyMonitor.isModifierPressed,
-                                    dragAutoScrollController: dragAutoScrollController,
-                                    draggedTabId: $draggedTabId,
-                                    dropIndicator: $dropIndicator,
-                                    remoteContextMenuWorkspaceIds: remoteContextMenuTargets.map(\.id),
-                                    allRemoteContextMenuTargetsConnecting: !remoteContextMenuTargets.isEmpty && remoteContextMenuTargets.allSatisfy { $0.remoteConnectionState == .connecting },
-                                    allRemoteContextMenuTargetsDisconnected: !remoteContextMenuTargets.isEmpty && remoteContextMenuTargets.allSatisfy { $0.remoteConnectionState == .disconnected }
+                                    },
+                                    onRevealInFinder: {
+                                        NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: group.directory)
+                                    }
                                 )
-                                .equatable()
+
+                                if !projectGrouping.isCollapsed(group.id) {
+                                    ForEach(Array(group.workspaceIds.enumerated()), id: \.element) { wsIndex, wsId in
+                                        if let index = tabManager.tabs.firstIndex(where: { $0.id == wsId }) {
+                                            let tab = tabManager.tabs[index]
+                                            let isLast = wsIndex == group.workspaceIds.count - 1
+                                            HStack(spacing: 0) {
+                                                // Tree connector
+                                                Text(isLast ? "└" : "├")
+                                                    .font(.system(size: 12, design: .monospaced))
+                                                    .foregroundColor(.secondary.opacity(0.4))
+                                                    .frame(width: 16)
+                                                tabItemRow(tab: tab, index: index, workspaceCount: workspaceCount, canCloseWorkspace: canCloseWorkspace)
+                                            }
+                                            .padding(.leading, 8)
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Ungrouped workspaces (no header)
+                            ForEach(projectGrouping.ungroupedIds, id: \.self) { wsId in
+                                if let index = tabManager.tabs.firstIndex(where: { $0.id == wsId }) {
+                                    let tab = tabManager.tabs[index]
+                                    tabItemRow(tab: tab, index: index, workspaceCount: workspaceCount, canCloseWorkspace: canCloseWorkspace)
+                                }
+                            }
+
+                            // Show all tabs flat if no grouping exists (single workspaces, etc.)
+                            if projectGrouping.groups.isEmpty && projectGrouping.ungroupedIds.isEmpty {
+                                ForEach(Array(tabManager.tabs.enumerated()), id: \.element.id) { index, tab in
+                                    tabItemRow(tab: tab, index: index, workspaceCount: workspaceCount, canCloseWorkspace: canCloseWorkspace)
+                                }
                             }
                         }
                         .padding(.vertical, 8)
@@ -8323,6 +8431,10 @@ struct VerticalTabsSidebar: View {
                 tabId: nil,
                 reason: "sidebar_appear"
             )
+            projectGrouping.update(from: tabManager.tabs)
+        }
+        .onChange(of: tabManager.tabs.count) { _ in
+            projectGrouping.update(from: tabManager.tabs)
         }
         .onDisappear {
             modifierKeyMonitor.stop()
@@ -8367,6 +8479,78 @@ struct VerticalTabsSidebar: View {
     private func debugShortSidebarTabId(_ id: UUID?) -> String {
         guard let id else { return "nil" }
         return String(id.uuidString.prefix(5))
+    }
+
+    @ViewBuilder
+    private func tabItemRow(tab: Tab, index: Int, workspaceCount: Int, canCloseWorkspace: Bool) -> some View {
+        let selectedContextIds: Set<UUID> = selectedTabIds.contains(tab.id) ? selectedTabIds : [tab.id]
+        let contextTargetIds = tabManager.tabs.compactMap { workspace in
+            selectedContextIds.contains(workspace.id) ? workspace.id : nil
+        }
+        let remoteContextMenuTargets = tabManager.tabs.filter { workspace in
+            contextTargetIds.contains(workspace.id) && workspace.isRemoteWorkspace
+        }
+        TabItemView(
+            tabManager: tabManager,
+            notificationStore: notificationStore,
+            tab: tab,
+            index: index,
+            isActive: tabManager.selectedTabId == tab.id,
+            workspaceShortcutDigit: WorkspaceShortcutMapper.commandDigitForWorkspace(
+                at: index,
+                workspaceCount: workspaceCount
+            ),
+            canCloseWorkspace: canCloseWorkspace,
+            accessibilityWorkspaceCount: workspaceCount,
+            unreadCount: notificationStore.unreadCount(forTabId: tab.id),
+            latestNotificationText: {
+                guard showsSidebarNotificationMessage,
+                      let notification = notificationStore.latestNotification(forTabId: tab.id) else {
+                    return nil
+                }
+                let text = notification.body.isEmpty ? notification.title : notification.body
+                let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                return trimmed.isEmpty ? nil : trimmed
+            }(),
+            agentStatus: {
+                let hasUnread = notificationStore.unreadCount(forTabId: tab.id) > 0
+                let isSelected = tabManager.selectedTabId == tab.id
+                let shellState = tab.workspaceShellState
+                // Priority 1: unread notifications (only if not currently looking at it)
+                if hasUnread && !isSelected { return .needsAttention }
+                // Priority 2: real shell state
+                switch shellState {
+                case "running": return .running
+                case "idle": return .idle
+                default: break
+                }
+                // Priority 3: title-based heuristics
+                let lower = tab.title.lowercased()
+                if lower.contains("error") || lower.contains("failed") || lower.contains("panic") {
+                    return .errored
+                }
+                if lower.contains("completed") || lower.contains("done") || lower.contains("finished") {
+                    return .completed
+                }
+                let agentPatterns = ["claude", "codex", "aider", "cursor", "copilot"]
+                if agentPatterns.contains(where: { lower.contains($0) }) {
+                    return .running
+                }
+                return .idle
+            }(),
+            rowSpacing: tabRowSpacing,
+            setSelectionToTabs: { selection = .tabs },
+            selectedTabIds: $selectedTabIds,
+            lastSidebarSelectionIndex: $lastSidebarSelectionIndex,
+            showsModifierShortcutHints: modifierKeyMonitor.isModifierPressed,
+            dragAutoScrollController: dragAutoScrollController,
+            draggedTabId: $draggedTabId,
+            dropIndicator: $dropIndicator,
+            remoteContextMenuWorkspaceIds: remoteContextMenuTargets.map(\.id),
+            allRemoteContextMenuTargetsConnecting: !remoteContextMenuTargets.isEmpty && remoteContextMenuTargets.allSatisfy { $0.remoteConnectionState == .connecting },
+            allRemoteContextMenuTargetsDisconnected: !remoteContextMenuTargets.isEmpty && remoteContextMenuTargets.allSatisfy { $0.remoteConnectionState == .disconnected }
+        )
+        .equatable()
     }
 }
 
@@ -10623,6 +10807,104 @@ enum SidebarTrailingAccessoryWidthPolicy {
     }
 }
 
+// MARK: - Project group header
+
+private struct ProjectHeaderView: View {
+    let group: ProjectGrouping.ProjectGroup
+    let isCollapsed: Bool
+    let onToggle: () -> Void
+    let onCreateWorktree: (String) -> Void
+    let onRevealInFinder: () -> Void
+
+    @State private var isShowingNewWorktreeSheet = false
+    @State private var newBranchName = ""
+
+    var body: some View {
+        Button(action: onToggle) {
+            HStack(spacing: 6) {
+                Image(systemName: isCollapsed ? "chevron.right" : "chevron.down")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundColor(.secondary)
+                    .frame(width: 12)
+
+                Image(systemName: "folder.fill")
+                    .font(.system(size: 12))
+                    .foregroundColor(.orange)
+
+                Text(group.name)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(.primary)
+                    .lineLimit(1)
+
+                Spacer()
+
+                Text("\(group.workspaceIds.count)")
+                    .font(.system(size: 10, weight: .medium, design: .rounded))
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 1)
+                    .background(Color.secondary.opacity(0.15))
+                    .cornerRadius(4)
+
+                if group.worktreeCount > 0 {
+                    HStack(spacing: 2) {
+                        Image(systemName: "arrow.triangle.branch")
+                            .font(.system(size: 9))
+                        Text("\(group.worktreeCount)")
+                            .font(.system(size: 10, weight: .medium, design: .rounded))
+                    }
+                    .foregroundColor(.secondary)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+        }
+        .buttonStyle(.plain)
+        .contextMenu {
+            Button(String(localized: "project.newWorktree", defaultValue: "New Worktree...")) {
+                isShowingNewWorktreeSheet = true
+            }
+            Divider()
+            Button(String(localized: "project.revealInFinder", defaultValue: "Reveal in Finder")) {
+                onRevealInFinder()
+            }
+        }
+        .sheet(isPresented: $isShowingNewWorktreeSheet) {
+            VStack(spacing: 16) {
+                Text(String(localized: "project.newWorktree.title", defaultValue: "New Worktree"))
+                    .font(.headline)
+                TextField(String(localized: "project.newWorktree.placeholder", defaultValue: "Branch name"), text: $newBranchName)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 250)
+                    .onSubmit {
+                        if !newBranchName.isEmpty {
+                            onCreateWorktree(newBranchName)
+                            newBranchName = ""
+                            isShowingNewWorktreeSheet = false
+                        }
+                    }
+                HStack {
+                    Button(String(localized: "general.cancel", defaultValue: "Cancel")) {
+                        newBranchName = ""
+                        isShowingNewWorktreeSheet = false
+                    }
+                    .keyboardShortcut(.escape)
+                    Button(String(localized: "general.create", defaultValue: "Create")) {
+                        if !newBranchName.isEmpty {
+                            onCreateWorktree(newBranchName)
+                            newBranchName = ""
+                            isShowingNewWorktreeSheet = false
+                        }
+                    }
+                    .keyboardShortcut(.return)
+                    .disabled(newBranchName.isEmpty)
+                }
+            }
+            .padding(20)
+        }
+    }
+}
+
 // PERF: TabItemView is Equatable so SwiftUI skips body re-evaluation when
 // the parent rebuilds with unchanged values. Without this, every TabManager
 // or NotificationStore publish causes ALL tab items to re-evaluate (~18% of
@@ -10641,6 +10923,7 @@ private struct TabItemView: View, Equatable {
         lhs.accessibilityWorkspaceCount == rhs.accessibilityWorkspaceCount &&
         lhs.unreadCount == rhs.unreadCount &&
         lhs.latestNotificationText == rhs.latestNotificationText &&
+        lhs.agentStatus == rhs.agentStatus &&
         lhs.rowSpacing == rhs.rowSpacing &&
         lhs.showsModifierShortcutHints == rhs.showsModifierShortcutHints &&
         lhs.remoteContextMenuWorkspaceIds == rhs.remoteContextMenuWorkspaceIds &&
@@ -10662,6 +10945,7 @@ private struct TabItemView: View, Equatable {
     let accessibilityWorkspaceCount: Int
     let unreadCount: Int
     let latestNotificationText: String?
+    let agentStatus: AgentStatus
     let rowSpacing: CGFloat
     let setSelectionToTabs: () -> Void
     @Binding var selectedTabIds: Set<UUID>
@@ -10760,6 +11044,26 @@ private struct TabItemView: View, Equatable {
 
     private var activeProgressFillColor: Color {
         usesInvertedActiveForeground ? Color.white.opacity(0.8) : cmuxAccentColor()
+    }
+
+    private var agentStatusColor: Color {
+        switch agentStatus {
+        case .running: return .green
+        case .idle: return .yellow
+        case .needsAttention: return .red
+        case .completed: return .blue
+        case .errored: return .red
+        }
+    }
+
+    private var agentStatusLabel: String {
+        switch agentStatus {
+        case .running: return String(localized: "agent.status.running", defaultValue: "Running")
+        case .idle: return String(localized: "agent.status.idle", defaultValue: "Idle")
+        case .needsAttention: return String(localized: "agent.status.attention", defaultValue: "Attention")
+        case .completed: return String(localized: "agent.status.done", defaultValue: "Done")
+        case .errored: return String(localized: "agent.status.error", defaultValue: "Error")
+        }
     }
 
     private var shortcutHintEmphasis: Double {
@@ -10933,7 +11237,13 @@ private struct TabItemView: View, Equatable {
         }()
 
         VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 8) {
+            HStack(spacing: 6) {
+                // Agent status dot (color indicates status)
+                Circle()
+                    .fill(agentStatusColor)
+                    .frame(width: 8, height: 8)
+                    .help(agentStatusLabel)
+
                 if unreadCount > 0 {
                     ZStack {
                         Circle()
@@ -10958,6 +11268,21 @@ private struct TabItemView: View, Equatable {
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .layoutPriority(1)
+
+                // Branch badge with dropdown
+                WorktreeBadge(
+                    currentDirectory: tab.currentDirectory,
+                    currentBranch: tab.gitBranch?.branch,
+                    onSwitchBranch: { branch in
+                        checkoutBranch(branch)
+                    },
+                    onSwitchWorktree: { path in
+                        switchWorkspaceToPath(path)
+                    },
+                    onCreateWorktree: { branch in
+                        createWorktreeAndOpen(branch: branch, in: projectPathForWorktree(tab.currentDirectory))
+                    }
+                )
 
                 Spacer(minLength: 0)
 
@@ -11006,6 +11331,15 @@ private struct TabItemView: View, Equatable {
                     .lineLimit(2)
                     .truncationMode(.tail)
                     .multilineTextAlignment(.leading)
+            }
+
+            if let count = tab.completionChangedFileCount {
+                Text(count == 1
+                    ? String(localized: "sidebar.filesChanged.one", defaultValue: "1 file changed")
+                    : String(localized: "sidebar.filesChanged.many", defaultValue: "\(count) files changed"))
+                    .font(.system(size: 10))
+                    .foregroundColor(activeSecondaryColor(0.8))
+                    .lineLimit(1)
             }
 
             remoteWorkspaceSection
@@ -11165,6 +11499,7 @@ private struct TabItemView: View, Equatable {
         .animation(.easeInOut(duration: 0.2), value: tab.logEntries.count)
         .animation(.easeInOut(duration: 0.2), value: tab.progress != nil)
         .animation(.easeInOut(duration: 0.2), value: tab.metadataBlocks.count)
+        .animation(.easeInOut(duration: 0.15), value: isHovering)
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
         .background(
@@ -11389,6 +11724,68 @@ private struct TabItemView: View, Equatable {
             }
         }
 
+        // Git / Worktree submenu
+        let projectPath = projectPathForWorktree(tab.currentDirectory)
+        let worktrees = ProjectGrouping().worktrees(for: projectPath)
+        let branches = ProjectGrouping().branches(for: projectPath)
+        let currentBranch = tab.gitBranch?.branch
+        let existingWorktreeBranches = Set(worktrees.map { $0.branch })
+        let availableBranches = branches.filter { !existingWorktreeBranches.contains($0) }
+
+        if !worktrees.isEmpty || !availableBranches.isEmpty {
+            Menu(String(localized: "contextMenu.gitWorktree", defaultValue: "Git / Worktree")) {
+                if let branch = currentBranch {
+                    Label(branch, systemImage: "checkmark")
+                        .font(.system(size: 11, design: .monospaced))
+                    Divider()
+                }
+
+                if !worktrees.isEmpty {
+                    Text(String(localized: "contextMenu.worktrees", defaultValue: "Worktrees"))
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundColor(.secondary)
+
+                    ForEach(worktrees) { wt in
+                        Button {
+                            switchWorkspaceToPath(wt.path)
+                        } label: {
+                            HStack {
+                                Image(systemName: "arrow.triangle.branch")
+                                Text(wt.branch)
+                                    .font(.system(size: 11, design: .monospaced))
+                            }
+                        }
+                        .disabled(wt.branch == currentBranch)
+                    }
+                }
+
+                if !availableBranches.isEmpty {
+                    Divider()
+                    Text(String(localized: "contextMenu.newWorktreeFrom", defaultValue: "New Worktree From"))
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundColor(.secondary)
+
+                    ForEach(availableBranches.prefix(10), id: \.self) { branch in
+                        Button {
+                            createWorktreeAndOpen(branch: branch, in: projectPath)
+                        } label: {
+                            HStack {
+                                Image(systemName: "plus")
+                                Text(branch)
+                                    .font(.system(size: 11, design: .monospaced))
+                            }
+                        }
+                    }
+
+                    if availableBranches.count > 10 {
+                        Text(String(localized: "contextMenu.moreBranches", defaultValue: "+\(availableBranches.count - 10) more branches"))
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+        }
+
         Divider()
 
         Button(String(localized: "contextMenu.moveUp", defaultValue: "Move Up")) {
@@ -11461,6 +11858,19 @@ private struct TabItemView: View, Equatable {
         }
         .disabled(index == 0)
 
+        if tab.currentDirectory.contains("/.worktrees/") {
+            Divider()
+            Button(String(localized: "workspace.deleteWorktree", defaultValue: "Delete Worktree"), role: .destructive) {
+                let dir = tab.currentDirectory
+                if let range = dir.range(of: "/.worktrees/") {
+                    let projectPath = String(dir[dir.startIndex..<range.lowerBound])
+                    let branch = String(dir[range.upperBound...])
+                    tabManager.closeWorkspaceWithConfirmation(tab)
+                    ProjectGrouping().deleteWorktree(branch: branch, in: projectPath) { _ in }
+                }
+            }
+        }
+
         Divider()
 
         Button(markReadLabel) {
@@ -11479,6 +11889,7 @@ private struct TabItemView: View, Equatable {
         case .leftRail:
             if isActive        { return Color(nsColor: sidebarSelectedWorkspaceBackgroundNSColor(for: colorScheme)) }
             if isMultiSelected { return cmuxAccentColor().opacity(0.25) }
+            if isHovering      { return Color.secondary.opacity(0.08) }
             return Color.clear
         case .solidFill:
             if isActive { return Color(nsColor: sidebarSelectedWorkspaceBackgroundNSColor(for: colorScheme)) }
@@ -11487,6 +11898,7 @@ private struct TabItemView: View, Equatable {
                 return custom.opacity(0.7)
             }
             if isMultiSelected { return cmuxAccentColor().opacity(0.25) }
+            if isHovering      { return Color.secondary.opacity(0.08) }
             return Color.clear
         }
     }
@@ -11620,6 +12032,44 @@ private struct TabItemView: View, Equatable {
         guard let anchorIndex = tabManager.tabs.firstIndex(where: { $0.id == tabId }) else { return }
         let idsToClose = tabManager.tabs.prefix(upTo: anchorIndex).map { $0.id }
         closeTabs(idsToClose, allowPinned: true)
+    }
+
+    /// Extract project path from a worktree path (handles both main repo and .worktrees/ paths).
+    private func projectPathForWorktree(_ path: String) -> String {
+        if let range = path.range(of: "/.worktrees/") {
+            return String(path[path.startIndex..<range.lowerBound])
+        }
+        return path
+    }
+
+    /// Switch the current workspace to a different directory path by sending cd command.
+    private func switchWorkspaceToPath(_ newPath: String) {
+        guard let terminalPanel = tab.focusedTerminalPanel else { return }
+        let escapedPath = newPath.replacingOccurrences(of: "'", with: "'\\''")
+        terminalPanel.sendText("cd '\(escapedPath)'\n")
+    }
+
+    /// Checkout a git branch by sending git checkout command.
+    private func checkoutBranch(_ branch: String) {
+        guard let terminalPanel = tab.focusedTerminalPanel else { return }
+        let escapedBranch = branch.replacingOccurrences(of: "'", with: "'\\''")
+        terminalPanel.sendText("git checkout '\(escapedBranch)'\n")
+    }
+
+    /// Create a new worktree and open it in the current workspace.
+    private func createWorktreeAndOpen(branch: String, in projectPath: String) {
+        ProjectGrouping().createWorktree(branch: branch, in: projectPath) { result in
+            switch result {
+            case .success(let wtPath):
+                self.switchWorkspaceToPath(wtPath)
+            case .failure(let error):
+                let alert = NSAlert()
+                alert.messageText = String(localized: "alert.worktreeError.title", defaultValue: "Failed to Create Worktree")
+                alert.informativeText = error.localizedDescription
+                alert.alertStyle = .warning
+                alert.runModal()
+            }
+        }
     }
 
     private func markTabsRead(_ targetIds: [UUID]) {
@@ -12930,6 +13380,9 @@ private final class MiddleClickCaptureView: NSView {
 enum SidebarSelection {
     case tabs
     case notifications
+    case files
+    case changes
+    case missionControl
 }
 
 private struct ClearScrollBackground: ViewModifier {

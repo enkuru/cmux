@@ -415,6 +415,9 @@ extension Workspace {
             terminalSnapshot = nil
             browserSnapshot = nil
             markdownSnapshot = SessionMarkdownPanelSnapshot(filePath: markdownPanel.filePath)
+        case .diff:
+            // Diff panels are transient — don't persist across sessions
+            return nil
         }
 
         return SessionPanelSnapshot(
@@ -606,6 +609,9 @@ extension Workspace {
             }
             applySessionPanelMetadata(snapshot, toPanelId: markdownPanel.id)
             return markdownPanel.id
+        case .diff:
+            // Diff panels are transient — never restored
+            return nil
         }
     }
 
@@ -5224,6 +5230,8 @@ final class Workspace: Identifiable, ObservableObject {
     @Published var remoteHeartbeatCount: Int = 0
     @Published var remoteLastHeartbeatAt: Date?
     @Published var listeningPorts: [Int] = []
+    /// Number of files changed after last agent run (cleared on next run start)
+    @Published var completionChangedFileCount: Int?
     @Published private(set) var activeRemoteTerminalSessionCount: Int = 0
     var surfaceTTYNames: [UUID: String] = [:]
     private var remoteSessionController: WorkspaceRemoteSessionController?
@@ -5277,6 +5285,7 @@ final class Workspace: Identifiable, ObservableObject {
         static let terminal = "terminal"
         static let browser = "browser"
         static let markdown = "markdown"
+        static let diff = "diff"
     }
 
     enum PanelShellActivityState: String {
@@ -5742,6 +5751,8 @@ final class Workspace: Identifiable, ObservableObject {
             return SurfaceKind.browser
         case .markdown:
             return SurfaceKind.markdown
+        case .diff:
+            return SurfaceKind.diff
         }
     }
 
@@ -6014,6 +6025,39 @@ final class Workspace: Identifiable, ObservableObject {
             "panel=\(panelId.uuidString.prefix(5)) from=\(previousState.rawValue) to=\(state.rawValue)"
         )
 #endif
+        // Detect agent completion: running → idle
+        if previousState == .commandRunning && state == .promptIdle {
+            queryCompletionChangedFileCount()
+        } else if state == .commandRunning {
+            completionChangedFileCount = nil
+        }
+    }
+
+    private func queryCompletionChangedFileCount() {
+        let dir = currentDirectory
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+            process.arguments = ["diff", "--name-only"]
+            process.currentDirectoryURL = URL(fileURLWithPath: dir)
+
+            let pipe = Pipe()
+            process.standardOutput = pipe
+            process.standardError = Pipe()
+
+            do {
+                try process.run()
+                process.waitUntilExit()
+                let data = pipe.fileHandleForReading.readDataToEndOfFile()
+                let output = String(data: data, encoding: .utf8) ?? ""
+                let count = output.components(separatedBy: "\n").filter { !$0.isEmpty }.count
+                DispatchQueue.main.async {
+                    self?.completionChangedFileCount = count > 0 ? count : nil
+                }
+            } catch {
+                // Not critical — silently ignore
+            }
+        }
     }
 
     func panelNeedsConfirmClose(panelId: UUID, fallbackNeedsConfirmClose: Bool) -> Bool {
@@ -7392,6 +7436,70 @@ final class Workspace: Identifiable, ObservableObject {
 
         installMarkdownPanelSubscription(markdownPanel)
         return markdownPanel
+    }
+
+    // MARK: - Diff panels
+
+    /// Open a diff panel as a split to the right of the given source panel.
+    @discardableResult
+    func newDiffSurface(
+        fromPanelId panelId: UUID,
+        diffPanel: DiffPanel,
+        orientation: Bonsplit.SplitOrientation = .horizontal,
+        focus: Bool = true,
+        insertFirst: Bool = false
+    ) -> DiffPanel? {
+        guard let sourceTabId = surfaceIdFromPanelId(panelId) else { return nil }
+        var sourcePaneId: PaneID?
+        for paneId in bonsplitController.allPaneIds {
+            let tabs = bonsplitController.tabs(inPane: paneId)
+            if tabs.contains(where: { $0.id == sourceTabId }) {
+                sourcePaneId = paneId
+                break
+            }
+        }
+
+        guard let paneId = sourcePaneId else { return nil }
+
+        panels[diffPanel.id] = diffPanel
+        panelTitles[diffPanel.id] = diffPanel.displayTitle
+
+        let newTab = Bonsplit.Tab(
+            title: diffPanel.displayTitle,
+            icon: diffPanel.displayIcon,
+            kind: SurfaceKind.diff,
+            isDirty: diffPanel.isDirty,
+            isLoading: false,
+            isPinned: false
+        )
+        surfaceIdToPanelId[newTab.id] = diffPanel.id
+        let previousFocusedPanelId = focusedPanelId
+
+        isProgrammaticSplit = true
+        defer { isProgrammaticSplit = false }
+        guard bonsplitController.splitPane(paneId, orientation: orientation, withTab: newTab, insertFirst: insertFirst) != nil else {
+            surfaceIdToPanelId.removeValue(forKey: newTab.id)
+            panels.removeValue(forKey: diffPanel.id)
+            panelTitles.removeValue(forKey: diffPanel.id)
+            return nil
+        }
+
+        let previousHostedView = focusedTerminalPanel?.hostedView
+        if focus {
+            previousHostedView?.suppressReparentFocus()
+            focusPanel(diffPanel.id)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                previousHostedView?.clearSuppressReparentFocus()
+            }
+        } else {
+            preserveFocusAfterNonFocusSplit(
+                preferredPanelId: previousFocusedPanelId,
+                splitPanelId: diffPanel.id,
+                previousHostedView: previousHostedView
+            )
+        }
+
+        return diffPanel
     }
 
     /// Tear down all panels in this workspace, freeing their Ghostty surfaces.
@@ -10236,4 +10344,23 @@ extension Workspace: BonsplitDelegate {
     }
 
     // No post-close polling refresh loop: we rely on view invariants and Ghostty's wakeups.
+}
+
+// MARK: - WorkspaceDirectoryProviding conformance for FileExplorer
+
+extension Workspace: WorkspaceDirectoryProviding {
+    var workspaceId: UUID { id }
+    var workspaceTitle: String { customTitle ?? title }
+    var workspaceCurrentDirectory: String { currentDirectory }
+    var workspaceHasUnread: Bool {
+        AppDelegate.shared?.notificationStore?.unreadCount(forTabId: id) ?? 0 > 0
+    }
+    var workspaceShellState: String {
+        // Aggregate: if any panel is running a command, workspace is "running".
+        // If all known panels are idle, "idle". Otherwise "unknown".
+        let states = panelShellActivityStates.values
+        if states.contains(.commandRunning) { return "running" }
+        if !states.isEmpty && states.allSatisfy({ $0 == .promptIdle }) { return "idle" }
+        return "unknown"
+    }
 }

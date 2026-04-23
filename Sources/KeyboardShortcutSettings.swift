@@ -15,6 +15,8 @@ enum KeyboardShortcutSettings {
         case openFolder
         case sendFeedback
         case showNotifications
+        case showFileExplorer
+        case showMissionControl
         case jumpToUnread
         case triggerFlash
 
@@ -45,6 +47,11 @@ enum KeyboardShortcutSettings {
         case toggleBrowserDeveloperTools
         case showBrowserJavaScriptConsole
 
+        // Zoom
+        case zoomIn
+        case zoomOut
+        case zoomReset
+
         var id: String { rawValue }
 
         var label: String {
@@ -56,6 +63,8 @@ enum KeyboardShortcutSettings {
             case .openFolder: return String(localized: "shortcut.openFolder.label", defaultValue: "Open Folder")
             case .sendFeedback: return String(localized: "sidebar.help.sendFeedback", defaultValue: "Send Feedback")
             case .showNotifications: return String(localized: "shortcut.showNotifications.label", defaultValue: "Show Notifications")
+            case .showFileExplorer: return String(localized: "shortcut.showFileExplorer.label", defaultValue: "Show File Explorer")
+            case .showMissionControl: return String(localized: "shortcut.showMissionControl.label", defaultValue: "Show Mission Control")
             case .jumpToUnread: return String(localized: "shortcut.jumpToUnread.label", defaultValue: "Jump to Latest Unread")
             case .triggerFlash: return String(localized: "shortcut.flashFocusedPanel.label", defaultValue: "Flash Focused Panel")
             case .nextSurface: return String(localized: "shortcut.nextSurface.label", defaultValue: "Next Surface")
@@ -79,6 +88,9 @@ enum KeyboardShortcutSettings {
             case .openBrowser: return String(localized: "shortcut.openBrowser.label", defaultValue: "Open Browser")
             case .toggleBrowserDeveloperTools: return String(localized: "shortcut.toggleBrowserDevTools.label", defaultValue: "Toggle Browser Developer Tools")
             case .showBrowserJavaScriptConsole: return String(localized: "shortcut.showBrowserJSConsole.label", defaultValue: "Show Browser JavaScript Console")
+            case .zoomIn: return String(localized: "shortcut.zoomIn.label", defaultValue: "Zoom In")
+            case .zoomOut: return String(localized: "shortcut.zoomOut.label", defaultValue: "Zoom Out")
+            case .zoomReset: return String(localized: "shortcut.zoomReset.label", defaultValue: "Actual Size")
             }
         }
 
@@ -91,6 +103,8 @@ enum KeyboardShortcutSettings {
             case .openFolder: return "shortcut.openFolder"
             case .sendFeedback: return "shortcut.sendFeedback"
             case .showNotifications: return "shortcut.showNotifications"
+            case .showFileExplorer: return "shortcut.showFileExplorer"
+            case .showMissionControl: return "shortcut.showMissionControl"
             case .jumpToUnread: return "shortcut.jumpToUnread"
             case .triggerFlash: return "shortcut.triggerFlash"
             case .nextSidebarTab: return "shortcut.nextSidebarTab"
@@ -114,6 +128,9 @@ enum KeyboardShortcutSettings {
             case .openBrowser: return "shortcut.openBrowser"
             case .toggleBrowserDeveloperTools: return "shortcut.toggleBrowserDeveloperTools"
             case .showBrowserJavaScriptConsole: return "shortcut.showBrowserJavaScriptConsole"
+            case .zoomIn: return "shortcut.zoomIn"
+            case .zoomOut: return "shortcut.zoomOut"
+            case .zoomReset: return "shortcut.zoomReset"
             }
         }
 
@@ -133,6 +150,10 @@ enum KeyboardShortcutSettings {
                 return StoredShortcut(key: "f", command: true, shift: false, option: true, control: false)
             case .showNotifications:
                 return StoredShortcut(key: "i", command: true, shift: false, option: false, control: false)
+            case .showFileExplorer:
+                return StoredShortcut(key: "e", command: true, shift: true, option: false, control: false)
+            case .showMissionControl:
+                return StoredShortcut(key: "m", command: true, shift: false, option: false, control: false)
             case .jumpToUnread:
                 return StoredShortcut(key: "u", command: true, shift: true, option: false, control: false)
             case .triggerFlash:
@@ -181,6 +202,12 @@ enum KeyboardShortcutSettings {
             case .showBrowserJavaScriptConsole:
                 // Safari default: Show JavaScript Console.
                 return StoredShortcut(key: "c", command: true, shift: false, option: true, control: false)
+            case .zoomIn:
+                return StoredShortcut(key: "=", command: true, shift: false, option: false, control: false)
+            case .zoomOut:
+                return StoredShortcut(key: "-", command: true, shift: false, option: false, control: false)
+            case .zoomReset:
+                return StoredShortcut(key: "0", command: true, shift: false, option: false, control: false)
             }
         }
 
@@ -241,10 +268,14 @@ enum KeyboardShortcutSettings {
 
     // Defaults (used by settings reset + recorder button initial title)
     static let showNotificationsDefault = Action.showNotifications.defaultShortcut
+    static let showFileExplorerDefault = Action.showFileExplorer.defaultShortcut
     static let jumpToUnreadDefault = Action.jumpToUnread.defaultShortcut
 
     static func showNotificationsShortcut() -> StoredShortcut { shortcut(for: .showNotifications) }
     static func setShowNotificationsShortcut(_ shortcut: StoredShortcut) { setShortcut(shortcut, for: .showNotifications) }
+
+    static func showFileExplorerShortcut() -> StoredShortcut { shortcut(for: .showFileExplorer) }
+    static func setShowFileExplorerShortcut(_ shortcut: StoredShortcut) { setShortcut(shortcut, for: .showFileExplorer) }
 
     static func jumpToUnreadShortcut() -> StoredShortcut { shortcut(for: .jumpToUnread) }
     static func setJumpToUnreadShortcut(_ shortcut: StoredShortcut) { setShortcut(shortcut, for: .jumpToUnread) }
@@ -272,6 +303,10 @@ enum KeyboardShortcutSettings {
     static func openBrowserShortcut() -> StoredShortcut { shortcut(for: .openBrowser) }
     static func toggleBrowserDeveloperToolsShortcut() -> StoredShortcut { shortcut(for: .toggleBrowserDeveloperTools) }
     static func showBrowserJavaScriptConsoleShortcut() -> StoredShortcut { shortcut(for: .showBrowserJavaScriptConsole) }
+
+    static func zoomInShortcut() -> StoredShortcut { shortcut(for: .zoomIn) }
+    static func zoomOutShortcut() -> StoredShortcut { shortcut(for: .zoomOut) }
+    static func zoomResetShortcut() -> StoredShortcut { shortcut(for: .zoomReset) }
 }
 
 /// A keyboard shortcut that can be stored in UserDefaults

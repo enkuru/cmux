@@ -93,6 +93,19 @@ To update later:
 brew upgrade --cask cmux
 ```
 
+### Build from source
+
+Requires Xcode 15+ and Zig 0.13+.
+
+```bash
+git clone --recursive https://github.com/enkuru/cmux.git
+cd cmux
+./scripts/setup.sh      # initialize submodules and build GhosttyKit
+./scripts/install.sh    # build Release and install to /Applications
+```
+
+The install script builds a Release configuration, backs up any existing `/Applications/ccux.app`, and copies the new build.
+
 On first launch, macOS may ask you to confirm opening an app from an identified developer. Click **Open** to proceed.
 
 ## Why cmux?

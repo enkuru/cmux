@@ -2647,6 +2647,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         _ = saveSessionSnapshot(includeScrollback: true, removeWhenEmpty: false)
         stopSessionAutosaveTimer()
         TerminalController.shared.stop()
+        IDEMCPServer.shared.stop()
         VSCodeServeWebController.shared.stop()
         BrowserProfileStore.shared.flushPendingSaves()
         if TelemetrySettings.enabledForCurrentLaunch {
@@ -2700,6 +2701,76 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             }
         }
 #endif
+
+        // Start IDE MCP server for Claude Code integration
+        IDEMCPServer.shared.getWorkspaceFoldersHandler = { [weak self] in
+            guard let tabs = self?.tabManager?.tabs else { return [] }
+            return ActiveSessionMatcher.workspaceDirectoryInfos(from: tabs).map(\.directory)
+        }
+        IDEMCPServer.shared.openDiffHandler = { [weak self] oldPath, newPath, newContent, tabName, onResult in
+            // Dismiss any existing diff panel before opening a new one
+            IDEMCPServer.shared.dismissActiveDiffHandler?()
+
+            guard let tabManager = self?.tabManager,
+                  let workspace = tabManager.selectedWorkspace else {
+                onResult(.rejected)
+                return
+            }
+
+            let originalContent = (try? String(contentsOfFile: oldPath, encoding: .utf8)) ?? ""
+            let fileName = (oldPath as NSString).lastPathComponent
+            let ext = (fileName as NSString).pathExtension.lowercased()
+            let language: String = {
+                switch ext {
+                case "swift": return "swift"
+                case "ts", "tsx": return "typescript"
+                case "js", "jsx": return "javascript"
+                case "py": return "python"
+                case "java": return "java"
+                case "kt", "kts": return "kotlin"
+                case "go": return "go"
+                case "rs": return "rust"
+                case "md", "markdown": return "markdown"
+                case "json": return "json"
+                case "yml", "yaml": return "yaml"
+                case "xml", "plist": return "xml"
+                case "html", "htm": return "html"
+                case "css", "scss", "less": return "css"
+                case "sh", "bash", "zsh": return "bash"
+                case "sql": return "sql"
+                case "rb": return "ruby"
+                case "c", "h": return "c"
+                case "cpp", "cc", "cxx", "hpp": return "cpp"
+                case "cs": return "csharp"
+                case "php": return "php"
+                case "r": return "r"
+                case "lua": return "lua"
+                case "toml": return "ini"
+                case "dockerfile": return "dockerfile"
+                case "gradle": return "gradle"
+                default: return "plaintext"
+                }
+            }()
+
+            let diffPanel = DiffPanel(
+                fileName: fileName,
+                originalContent: originalContent,
+                proposedContent: newContent,
+                language: language,
+                onResult: onResult
+            )
+
+            // Open as split-right from the currently focused panel
+            if let focusedPanelId = workspace.focusedPanelId {
+                workspace.newDiffSurface(fromPanelId: focusedPanelId, diffPanel: diffPanel)
+                let dismiss: () -> Void = { [weak workspace] in
+                    _ = workspace?.closePanel(diffPanel.id, force: true)
+                }
+                diffPanel.onDismiss = dismiss
+                IDEMCPServer.shared.dismissActiveDiffHandler = dismiss
+            }
+        }
+        IDEMCPServer.shared.start()
     }
 
 #if DEBUG
@@ -3362,6 +3433,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 hasher.combine(0)
             case .notifications:
                 hasher.combine(1)
+            case .files:
+                hasher.combine(2)
+            case .changes:
+                hasher.combine(3)
+            case .missionControl:
+                hasher.combine(4)
             }
 
             if let window = context.window ?? windowForMainWindowId(context.windowId) {
@@ -8523,6 +8600,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             switch sidebarSelection {
             case .tabs: return "tabs"
             case .notifications: return "notifications"
+            case .files: return "files"
+            case .changes: return "changes"
+            case .missionControl: return "missionControl"
             }
         }()
         writeMultiWindowNotificationTestData([
@@ -8546,6 +8626,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     func toggleNotificationsPopover(animated: Bool = true, anchorView: NSView? = nil) {
         titlebarAccessoryController.toggleNotificationsPopover(animated: animated, anchorView: anchorView)
+    }
+
+    func toggleFileExplorer() {
+        guard let sidebarSelectionState else { return }
+        if sidebarSelectionState.selection == .files {
+            sidebarSelectionState.selection = .tabs
+        } else {
+            sidebarSelectionState.selection = .files
+        }
+        // Ensure sidebar is visible when showing file explorer
+        if sidebarSelectionState.selection == .files {
+            sidebarState?.isVisible = true
+        }
+    }
+
+    func toggleMissionControl() {
+        guard let sidebarSelectionState else { return }
+        if sidebarSelectionState.selection == .missionControl {
+            sidebarSelectionState.selection = .tabs
+        } else {
+            sidebarSelectionState.selection = .missionControl
+        }
+        // Ensure sidebar is visible when showing mission control
+        if sidebarSelectionState.selection == .missionControl {
+            sidebarState?.isVisible = true
+        }
     }
 
     @discardableResult
@@ -9309,6 +9415,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             return true
         }
 
+        // Check Show File Explorer shortcut
+        if matchShortcut(event: event, shortcut: KeyboardShortcutSettings.shortcut(for: .showFileExplorer)) {
+            toggleFileExplorer()
+            return true
+        }
+
+        // Check Show Mission Control shortcut
+        if matchShortcut(event: event, shortcut: KeyboardShortcutSettings.shortcut(for: .showMissionControl)) {
+            toggleMissionControl()
+            return true
+        }
+
         if matchShortcut(event: event, shortcut: KeyboardShortcutSettings.shortcut(for: .sendFeedback)) {
             guard let targetContext = preferredMainWindowContextForShortcuts(event: event),
                   let targetWindow = targetContext.window ?? windowForMainWindowId(targetContext.windowId) else {
@@ -9678,53 +9796,48 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             }
         }
 
-        #if DEBUG
-        logBrowserZoomShortcutTrace(stage: "probe", event: event, flags: flags, chars: chars)
-        #endif
-        let zoomAction = browserZoomShortcutAction(
-            flags: flags,
-            chars: chars,
-            keyCode: event.keyCode,
-            literalChars: event.characters
-        )
-        #if DEBUG
-        logBrowserZoomShortcutTrace(stage: "match", event: event, flags: flags, chars: chars, action: zoomAction)
-        #endif
-        if let action = zoomAction, let manager = tabManager {
-            let handled: Bool
-            switch action {
-            case .zoomIn:
-                handled = manager.zoomInFocusedBrowser()
-            case .zoomOut:
-                handled = manager.zoomOutFocusedBrowser()
-            case .reset:
-                handled = manager.resetZoomFocusedBrowser()
+        // Zoom shortcuts — configurable via KeyboardShortcutSettings.
+        // Must be handled here in the event monitor because menu-level
+        // .keyboardShortcut intercepts events before NSWindow.performKeyEquivalent.
+        let zoomShortcut: KeyboardShortcutSettings.Action? = {
+            if matchShortcut(event: event, shortcut: KeyboardShortcutSettings.zoomInShortcut()) { return .zoomIn }
+            if matchShortcut(event: event, shortcut: KeyboardShortcutSettings.zoomOutShortcut()) { return .zoomOut }
+            if matchShortcut(event: event, shortcut: KeyboardShortcutSettings.zoomResetShortcut()) { return .zoomReset }
+            return nil
+        }()
+        if let zoomShortcut {
+            // Terminal focused → route to ghostty font size action
+            let firstResponder = NSApp.keyWindow?.firstResponder
+            if let ghosttyView = cmuxOwningGhosttyView(for: firstResponder),
+               let surface = ghosttyView.terminalSurface?.surface {
+                let bindingAction: String
+                switch zoomShortcut {
+                case .zoomIn: bindingAction = "increase_font_size:1"
+                case .zoomOut: bindingAction = "decrease_font_size:1"
+                case .zoomReset: bindingAction = "reset_font_size"
+                default: bindingAction = ""
+                }
+                if !bindingAction.isEmpty {
+                    ghostty_surface_binding_action(surface, bindingAction, UInt(bindingAction.utf8.count))
+                }
+#if DEBUG
+                dlog("zoom.shortcut stage=monitor.ghosttyDirect event=\(NSWindow.keyDescription(event)) action=\(zoomShortcut)")
+#endif
+                return true
             }
-            #if DEBUG
-            logBrowserZoomShortcutTrace(
-                stage: "dispatch",
-                event: event,
-                flags: flags,
-                chars: chars,
-                action: action,
-                handled: handled
-            )
-            #endif
-            return handled
-        }
-        #if DEBUG
-        if zoomAction != nil, tabManager == nil {
-            logBrowserZoomShortcutTrace(
-                stage: "dispatch.noManager",
-                event: event,
-                flags: flags,
-                chars: chars,
-                action: zoomAction,
-                handled: false
-            )
-        }
-        #endif
 
+            // Browser focused → route to browser zoom
+            if let manager = tabManager {
+                let handled: Bool
+                switch zoomShortcut {
+                case .zoomIn: handled = manager.zoomInFocusedBrowser()
+                case .zoomOut: handled = manager.zoomOutFocusedBrowser()
+                case .zoomReset: handled = manager.resetZoomFocusedBrowser()
+                default: handled = false
+                }
+                return handled
+            }
+        }
         return false
     }
 
@@ -10451,6 +10564,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             }
         }
         return false
+    }
+
+    /// Returns true if the event matches any of the configured zoom shortcuts.
+    func matchesZoomShortcut(event: NSEvent) -> Bool {
+        matchShortcut(event: event, shortcut: KeyboardShortcutSettings.zoomInShortcut())
+            || matchShortcut(event: event, shortcut: KeyboardShortcutSettings.zoomOutShortcut())
+            || matchShortcut(event: event, shortcut: KeyboardShortcutSettings.zoomResetShortcut())
     }
 
     /// Match a shortcut against an event, handling normal keys.
@@ -12341,16 +12461,10 @@ private extension NSWindow {
                 return result
             }
 
-            // Preserve Ghostty's terminal font-size shortcuts (Cmd +/−/0) when
-            // the terminal is focused. Otherwise our browser menu shortcuts can
-            // consume the event even when no browser panel is focused.
-            if shouldRouteTerminalFontZoomShortcutToGhostty(
-                firstResponderIsGhostty: true,
-                flags: event.modifierFlags,
-                chars: event.charactersIgnoringModifiers ?? "",
-                keyCode: event.keyCode,
-                literalChars: event.characters
-            ) {
+            // Preserve Ghostty's terminal font-size shortcuts when the terminal
+            // is focused. The event monitor normally handles this, but this is a
+            // safety net in case the event reaches performKeyEquivalent.
+            if AppDelegate.shared?.matchesZoomShortcut(event: event) == true {
                 ghosttyView.keyDown(with: event)
 #if DEBUG
                 dlog("zoom.shortcut stage=window.ghosttyKeyDownDirect event=\(Self.keyDescription(event)) handled=1")

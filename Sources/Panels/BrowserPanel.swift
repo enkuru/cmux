@@ -2504,6 +2504,18 @@ final class BrowserPanel: Panel, ObservableObject {
                 forMainFrameOnly: true
             )
         )
+
+        // Register handler for cmux diff actions (per-hunk stage/revert)
+        configuration.userContentController.add(
+            CmuxDiffMessageHandler.shared,
+            name: "cmuxDiff"
+        )
+
+        // Register handler for IDE MCP diff editor approve/reject
+        configuration.userContentController.add(
+            IDEDiffMessageHandler.shared,
+            name: "cmuxIDEDiff"
+        )
     }
 
     private func bindWebView(_ webView: CmuxWebView) {
@@ -3017,6 +3029,12 @@ final class BrowserPanel: Panel, ObservableObject {
                 // a distracting tab-title flash (e.g. to host/URL). Only accept non-empty titles.
                 let trimmed = (webView.title ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !trimmed.isEmpty else { return }
+                // Intercept IDE diff editor results
+                if trimmed.hasPrefix("CMUX_DIFF_RESULT:") {
+                    let json = String(trimmed.dropFirst("CMUX_DIFF_RESULT:".count))
+                    IDEDiffMessageHandler.shared.handleTitleMessage(json)
+                    return
+                }
                 self.pageTitle = trimmed
             }
         }
@@ -6086,6 +6104,19 @@ private class BrowserNavigationDelegate: NSObject, WKNavigationDelegate {
             #if DEBUG
             dlog("browser.navigation.external source=navDelegate opened=\(opened ? 1 : 0) url=\(url.absoluteString)")
             #endif
+            decisionHandler(.cancel)
+            return
+        }
+
+        // Cmd+Shift+click opens the link in the user's default external browser.
+        if navigationAction.navigationType == .linkActivated,
+           navigationAction.modifierFlags.contains(.command),
+           navigationAction.modifierFlags.contains(.shift),
+           let url = navigationAction.request.url {
+#if DEBUG
+            dlog("browser.nav.decidePolicy.action kind=openExternal url=\(url.absoluteString)")
+#endif
+            NSWorkspace.shared.open(url)
             decisionHandler(.cancel)
             return
         }
