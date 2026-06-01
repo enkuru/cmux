@@ -770,6 +770,43 @@ func titlebarControlsShouldApplyLayout(
         || abs(previous.yOffset - next.yOffset) > tolerance
 }
 
+/// Computes the titlebar controls' content size directly from the style config,
+/// mirroring the layout in `TitlebarControlsView.body` (three fixed-size buttons
+/// in an HStack, plus the leading/group/trailing padding).
+///
+/// This deliberately avoids forcing a SwiftUI measurement
+/// (`layoutSubtreeIfNeeded`/`fittingSize`) on the live, window-attached hosting
+/// view. On macOS 26 that re-enters the SwiftUI view graph and AppKit's
+/// constraint engine during the window's constraint pass, spirals into repeated
+/// safe-area invalidations (AttributeGraph cycles), and aborts the window with an
+/// over-budget "Update Constraints in Window" exception — crashing the app on
+/// launch. The controls are fixed-size, so the size is fully determined by the
+/// style config and can be computed statically.
+func titlebarControlsDefaultContentSize(
+    for config: TitlebarControlsStyleConfig,
+    hintTrailingInset: CGFloat
+) -> NSSize {
+    let buttonCount: CGFloat = 3
+    let buttonRowWidth = buttonCount * config.buttonSize + (buttonCount - 1) * config.spacing
+    let leadingPadding: CGFloat = 4 // matches TitlebarControlsView.body `.padding(.leading, 4)`
+    let width = leadingPadding
+        + config.groupPadding.leading
+        + buttonRowWidth
+        + config.groupPadding.trailing
+        + hintTrailingInset
+    let height = config.groupPadding.top + config.buttonSize + config.groupPadding.bottom
+    return NSSize(width: width, height: height)
+}
+
+/// Replicates `TitlebarControlsView.titlebarHintTrailingInset` so the statically
+/// computed content size reserves the same trailing room for shortcut-hint pills.
+func titlebarControlsHintTrailingInset(defaults: UserDefaults = .standard) -> CGFloat {
+    let raw = defaults.object(forKey: ShortcutHintDebugSettings.titlebarHintXKey) as? Double
+        ?? ShortcutHintDebugSettings.defaultTitlebarHintX
+    let titlebarHintRightSafetyShift: CGFloat = 10
+    return CGFloat(max(0, ShortcutHintDebugSettings.clamped(raw))) + titlebarHintRightSafetyShift + 8
+}
+
 final class TitlebarControlsAccessoryViewController: NSTitlebarAccessoryViewController, NSPopoverDelegate {
     private let hostingView: NonDraggableHostingView<TitlebarControlsView>
     private let containerView = NSView()
@@ -813,6 +850,11 @@ final class TitlebarControlsAccessoryViewController: NSTitlebarAccessoryViewCont
         containerView.layer?.masksToBounds = false
         hostingView.translatesAutoresizingMaskIntoConstraints = true
         hostingView.autoresizingMask = [.width, .height]
+        // The hosting view is sized explicitly via `frame` in `updateSize()`, so it
+        // must not also publish intrinsic-content-size constraints. On macOS 26,
+        // letting the SwiftUI content drive constraint-based sizing re-enters the
+        // view graph during the window's constraint pass and can crash the window.
+        hostingView.sizingOptions = []
         containerView.addSubview(hostingView)
 
         userDefaultsObserver = NotificationCenter.default.addObserver(
@@ -853,7 +895,10 @@ final class TitlebarControlsAccessoryViewController: NSTitlebarAccessoryViewCont
             return
         }
         lastObservedViewSize = currentViewSize
-        scheduleSizeUpdate(invalidateFittingSize: true)
+        // The controls' content size depends only on the style config, not on
+        // window geometry, so don't recompute it here; just re-center within the
+        // current titlebar height using the cached size.
+        scheduleSizeUpdate(invalidateFittingSize: false)
     }
 
     private func scheduleSizeUpdate(invalidateFittingSize: Bool = false) {
@@ -873,9 +918,16 @@ final class TitlebarControlsAccessoryViewController: NSTitlebarAccessoryViewCont
         guard showsWorkspaceTitlebar else { return }
         let contentSize: NSSize
         if fittingSizeNeedsRefresh || cachedFittingSize == nil {
-            hostingView.invalidateIntrinsicContentSize()
-            hostingView.layoutSubtreeIfNeeded()
-            cachedFittingSize = hostingView.fittingSize
+            // Compute the size statically from the active style instead of forcing
+            // a SwiftUI measurement on the window-attached hosting view. See
+            // `titlebarControlsDefaultContentSize` for why (macOS 26 launch crash).
+            let style = TitlebarControlsStyle(
+                rawValue: UserDefaults.standard.integer(forKey: "titlebarControlsStyle")
+            ) ?? .classic
+            cachedFittingSize = titlebarControlsDefaultContentSize(
+                for: style.config,
+                hintTrailingInset: titlebarControlsHintTrailingInset()
+            )
             fittingSizeNeedsRefresh = false
         }
         contentSize = cachedFittingSize ?? .zero

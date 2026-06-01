@@ -340,6 +340,25 @@ struct cmuxApp: App {
                 .environmentObject(notificationStore)
                 .environmentObject(sidebarState)
                 .environmentObject(sidebarSelectionState)
+                .background(
+                    // macOS 26 launch-crash guard. A layout feedback in the window
+                    // content can drive the window width unbounded (observed
+                    // ~106500pt), which exceeds AppKit's per-display-cycle
+                    // "Update Constraints in Window" budget and aborts the app with
+                    // an uncaught NSGenericException on launch. Capping the window to
+                    // the desktop bounds keeps the runaway below the crash threshold
+                    // so the window always opens at a sane, standard size.
+                    WindowAccessor { window in
+                        let desktop = NSScreen.screens.reduce(CGRect.zero) { $0.union($1.frame) }
+                        guard desktop.width > 0, desktop.height > 0 else { return }
+                        window.maxSize = desktop.size
+                        if window.frame.width > desktop.width || window.frame.height > desktop.height {
+                            let target = (window.screen ?? NSScreen.main)?.visibleFrame ?? desktop
+                            window.setFrame(target, display: true)
+                        }
+                    }
+                    .frame(width: 0, height: 0)
+                )
                 .onAppear {
 #if DEBUG
                     if ProcessInfo.processInfo.environment["CMUX_UI_TEST_MODE"] == "1" {
