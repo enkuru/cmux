@@ -10,6 +10,7 @@ struct FileExplorerSidebar: View {
     @AppStorage("fileExplorerVisibleHiddenFolders") private var visibleHiddenFoldersRaw = ""
     @State private var showHiddenFolderSettings = false
     @State private var newHiddenFolderName = ""
+    @State private var searchText = ""
 
     /// Space at top of sidebar for traffic light buttons (matches VerticalTabsSidebar)
     private let trafficLightPadding: CGFloat = 28
@@ -23,10 +24,12 @@ struct FileExplorerSidebar: View {
                     ScrollView {
                         VStack(spacing: 0) {
                             Spacer()
-                                .frame(height: trafficLightPadding)
+                                .frame(height: trafficLightPadding + 26)
 
-                            // Header (below traffic light buttons)
+                            // Header (below traffic light buttons + view-switcher row)
                             fileExplorerHeader
+
+                            fileSearchField
 
                             LazyVStack(spacing: 2) {
                             let entries = treeModel.flatVisibleEntries(
@@ -57,11 +60,7 @@ struct FileExplorerSidebar: View {
                 }
             }
             }
-
-            // Vertical divider on the right edge
-            Rectangle()
-                .fill(Color.primary.opacity(0.12))
-                .frame(width: 1)
+            // Right-edge boundary is drawn by the shared sidebar resizer overlay.
         }
         .onAppear {
             if rootDirectory.isEmpty {
@@ -89,6 +88,47 @@ struct FileExplorerSidebar: View {
             treeModel.autoExpandForSessions(freshWorkspaces)
             treeModel.refreshGitInfo(for: freshWorkspaces)
         }
+        .task(id: searchText) {
+            // Debounce rapid typing; `.task(id:)` cancels the prior run on each change.
+            try? await Task.sleep(nanoseconds: 150_000_000)
+            if Task.isCancelled { return }
+            await treeModel.runSearch(query: searchText)
+        }
+    }
+
+    // MARK: - Search
+
+    private var fileSearchField: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 10, weight: .medium))
+                .foregroundColor(.secondary)
+
+            TextField(
+                String(localized: "fileExplorer.search.placeholder", defaultValue: "Search folders"),
+                text: $searchText
+            )
+            .textFieldStyle(.plain)
+            .font(.system(size: 12))
+
+            if !searchText.isEmpty {
+                Button(action: { searchText = "" }) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(.plain)
+                .safeHelp(String(localized: "fileExplorer.search.clear.tooltip", defaultValue: "Clear Search"))
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(Color.primary.opacity(0.06))
+        )
+        .padding(.horizontal, 12)
+        .padding(.bottom, 4)
     }
 
     // MARK: - Header

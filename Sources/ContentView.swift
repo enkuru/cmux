@@ -337,7 +337,10 @@ final class SidebarState: ObservableObject {
 
 enum SidebarResizeInteraction {
     static let handleWidth: CGFloat = 6
-    static let hitInset: CGFloat = 3
+    // Grab margin on each side of the divider beyond the visible handle. Wider = easier to
+    // grab the sidebar edge; this feeds both the SwiftUI resize handle and the terminal
+    // portal's hit-test pass-through, so they stay in sync.
+    static let hitInset: CGFloat = 7
 
     static var hitWidthPerSide: CGFloat {
         hitInset + (handleWidth / 2)
@@ -2047,22 +2050,35 @@ struct ContentView: View {
             let totalWidth = max(0, proxy.size.width)
             let dividerX = min(max(sidebarWidth, 0), totalWidth)
             let leadingWidth = max(0, dividerX - sidebarResizerHitWidthPerSide)
+            let resizeActive = isResizerDragging || isResizerBandActive || !hoveredResizerHandles.isEmpty
 
-            HStack(spacing: 0) {
-                Color.clear
-                    .frame(width: leadingWidth)
+            ZStack(alignment: .leading) {
+                HStack(spacing: 0) {
+                    Color.clear
+                        .frame(width: leadingWidth)
+                        .allowsHitTesting(false)
+
+                    sidebarResizerHandleOverlay(
+                        .divider,
+                        width: sidebarResizerHitWidthPerSide * 2,
+                        availableWidth: totalWidth,
+                        accessibilityIdentifier: "SidebarResizer"
+                    )
+
+                    Color.clear
+                        .frame(maxWidth: .infinity)
+                        .allowsHitTesting(false)
+                }
+
+                // Visible boundary line at the sidebar edge. Always faintly visible so the
+                // edge is discoverable; brightens to the accent color while hovering/dragging.
+                Rectangle()
+                    .fill(resizeActive ? cmuxAccentColor().opacity(0.9) : Color.primary.opacity(0.18))
+                    .frame(width: resizeActive ? 2 : 1)
+                    .frame(maxHeight: .infinity)
+                    .offset(x: dividerX - (resizeActive ? 1 : 0.5))
                     .allowsHitTesting(false)
-
-                sidebarResizerHandleOverlay(
-                    .divider,
-                    width: sidebarResizerHitWidthPerSide * 2,
-                    availableWidth: totalWidth,
-                    accessibilityIdentifier: "SidebarResizer"
-                )
-
-                Color.clear
-                    .frame(maxWidth: .infinity)
-                    .allowsHitTesting(false)
+                    .animation(.easeOut(duration: 0.12), value: resizeActive)
             }
             .frame(width: totalWidth, height: proxy.size.height, alignment: .leading)
             .onAppear {
@@ -2156,7 +2172,10 @@ struct ContentView: View {
                 .buttonStyle(.plain)
                 .help(String(localized: "sidebar.mission.control.tooltip", defaultValue: "Mission Control (⌘M)"))
             }
-            .padding(.top, 6)
+            // Sit just below the titlebar strip so the view-switcher never collides
+            // with the window controls (sidebar toggle / notifications / new-tab) when
+            // the sidebar is narrow.
+            .padding(.top, 30)
             .padding(.trailing, 6)
         }
         .frame(width: sidebarWidth)
@@ -2291,12 +2310,19 @@ struct ContentView: View {
             TitlebarLeadingInsetReader(inset: $titlebarLeadingInset)
                 .allowsHitTesting(false)
 
-            HStack(spacing: 8) {
-                if isFullScreen && !sidebarState.isVisible {
+            // Fullscreen controls stay pinned to the leading edge.
+            if isFullScreen && !sidebarState.isVisible {
+                HStack(spacing: 8) {
                     fullscreenControls
+                    Spacer(minLength: 0)
                 }
+                .frame(height: 28)
+                .padding(.top, 2)
+                .padding(.leading, 8)
+            }
 
-                // Draggable folder icon + focused command name
+            // Draggable folder proxy + workspace title, centered in the titlebar strip.
+            HStack(spacing: 8) {
                 if let directory = focusedDirectory {
                     DraggableFolderIcon(directory: directory)
                 }
@@ -2305,15 +2331,12 @@ struct ContentView: View {
                     .font(.system(size: 13, weight: .bold))
                     .foregroundColor(fakeTitlebarTextColor)
                     .lineLimit(1)
+                    .truncationMode(.tail)
                     .allowsHitTesting(false)
-
-                Spacer()
-
             }
+            .frame(maxWidth: 440)
             .frame(height: 28)
             .padding(.top, 2)
-            .padding(.leading, (isFullScreen && !sidebarState.isVisible) ? 8 : (sidebarState.isVisible ? 12 : titlebarLeadingInset + CGFloat(debugTitlebarLeadingExtra)))
-            .padding(.trailing, 8)
         }
         .frame(height: titlebarPadding)
         .frame(maxWidth: .infinity)
@@ -8313,9 +8336,10 @@ struct VerticalTabsSidebar: View {
             GeometryReader { proxy in
                 ScrollView {
                     VStack(spacing: 0) {
-                        // Space for traffic lights / fullscreen controls
+                        // Space for traffic lights / fullscreen controls, plus the
+                        // view-switcher row that now sits just below the titlebar.
                         Spacer()
-                            .frame(height: trafficLightPadding)
+                            .frame(height: trafficLightPadding + 26)
 
                         LazyVStack(spacing: tabRowSpacing) {
                             // Grouped projects
@@ -8384,6 +8408,9 @@ struct VerticalTabsSidebar: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
                     .frame(minHeight: proxy.size.height, alignment: .top)
+                    // Keep row trailing content (ports, badges, PR links) clear of the
+                    // floating overlay scroller, which otherwise sits on top of it.
+                    .padding(.trailing, 6)
                 }
                 .background(
                     SidebarScrollViewResolver { scrollView in
@@ -8392,7 +8419,7 @@ struct VerticalTabsSidebar: View {
                     .frame(width: 0, height: 0)
                 )
                 .overlay(alignment: .top) {
-                    SidebarTopScrim(height: trafficLightPadding + 20)
+                    SidebarTopScrim(height: trafficLightPadding + 46)
                         .allowsHitTesting(false)
                 }
                 .overlay(alignment: .top) {
@@ -13796,14 +13823,35 @@ private struct TitlebarLeadingInsetReader: NSViewRepresentable {
     func updateNSView(_ nsView: NSView, context: Context) {
         DispatchQueue.main.async {
             guard let window = nsView.window else { return }
+            let controlsId = NSUserInterfaceItemIdentifier("cmux.titlebarControls")
             // Start past the traffic lights
-            var leading: CGFloat = 78
+            let trafficLightWidth: CGFloat = 78
+            var leading: CGFloat = trafficLightWidth
+            var hasControlsAccessory = false
             // Add width of all left-aligned titlebar accessories
             for accessory in window.titlebarAccessoryViewControllers
                 where accessory.layoutAttribute == .leading || accessory.layoutAttribute == .left {
                 leading += accessory.view.frame.width
+                if accessory.view.identifier == controlsId {
+                    hasControlsAccessory = true
+                }
             }
-            leading += 0
+            // The controls cluster is a fixed-size `.left` accessory, but its live
+            // `frame.width` can read 0 before the titlebar has laid it out. When the
+            // sidebar is hidden the workspace title uses this inset, so a stale 0 made
+            // the title start at ~78 and overlap the buttons. Floor the inset to the
+            // deterministically computed cluster width (the same source of truth the
+            // accessory sizes itself with) so the title always clears the controls.
+            if hasControlsAccessory {
+                let style = TitlebarControlsStyle(
+                    rawValue: UserDefaults.standard.integer(forKey: "titlebarControlsStyle")
+                ) ?? .classic
+                let controlsWidth = titlebarControlsDefaultContentSize(
+                    for: style.config,
+                    hintTrailingInset: titlebarControlsHintTrailingInset()
+                ).width
+                leading = max(leading, trafficLightWidth + controlsWidth)
+            }
             if leading != inset {
                 inset = leading
             }
@@ -13859,8 +13907,15 @@ private struct SidebarBackdrop: View {
                         Color(nsColor: tintColor)
                     }
                 }
+            } else if !useWindowLevelGlass {
+                // Material = none: there is no blur layer, but still honor the tint as a
+                // solid fill. Without this the sidebar has no background of its own and
+                // shows the window background straight through — which is not bound to the
+                // sidebar frame, so the visible color does not track the sidebar width when
+                // resized. A fully transparent tint keeps the previous see-through behavior.
+                Color(nsColor: tintColor)
             }
-            // When material is none or useWindowLevelGlass, render nothing
+            // When useWindowLevelGlass is set, render nothing (window handles glass + tint).
         }
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
     }

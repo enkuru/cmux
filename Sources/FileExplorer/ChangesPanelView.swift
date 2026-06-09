@@ -25,7 +25,7 @@ struct ChangesPanelView: View {
                     ScrollView {
                         VStack(spacing: 0) {
                             Spacer()
-                                .frame(height: trafficLightPadding)
+                                .frame(height: trafficLightPadding + 26)
 
                             changesHeader(totalCount: projects.reduce(0) { $0 + $1.files.count })
 
@@ -44,10 +44,7 @@ struct ChangesPanelView: View {
                     }
                 }
             }
-
-            Rectangle()
-                .fill(Color.primary.opacity(0.12))
-                .frame(width: 1)
+            // Right-edge boundary is drawn by the shared sidebar resizer overlay.
         }
     }
 

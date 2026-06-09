@@ -15,7 +15,7 @@ struct MissionControlView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Spacer()
-                .frame(height: trafficLightPadding)
+                .frame(height: trafficLightPadding + 26)
 
             // Agent cards grid
             if workspaceInfos.isEmpty {

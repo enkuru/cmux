@@ -8366,6 +8366,15 @@ final class GhosttySurfaceScrollView: NSView {
 #endif
             return
         }
+        // Don't steal focus from an editable text field the user is interacting with
+        // elsewhere in this window (e.g. the sidebar's folder-search field). The terminal
+        // reclaims focus when that field resigns (click / window-key / workspace switch).
+        if let fr = window.firstResponder, isEditableTextResponder(fr) {
+#if DEBUG
+            dlog("find.applyFirstResponder SKIP surface=\(surfaceShort) reason=editableTextFocused")
+#endif
+            return
+        }
 #if DEBUG
         dlog("find.applyFirstResponder APPLY surface=\(surfaceShort) prevFirstResponder=\(String(describing: window.firstResponder))")
 #endif
@@ -8373,6 +8382,15 @@ final class GhosttySurfaceScrollView: NSView {
         if isSurfaceViewFirstResponder() {
             reassertTerminalSurfaceFocus(reason: "applyFirstResponder.afterMakeFirstResponder")
         }
+    }
+
+    /// True when `responder` is an editable text field/view (e.g. a focused `TextField`),
+    /// so terminal focus restoration should not yank first responder away from it.
+    private func isEditableTextResponder(_ responder: NSResponder) -> Bool {
+        if let textView = responder as? NSTextView {
+            return textView.isEditable
+        }
+        return responder is NSTextField
     }
 
     /// Restore focus when window becomes key and the find bar is open.

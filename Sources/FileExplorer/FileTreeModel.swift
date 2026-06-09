@@ -392,6 +392,10 @@ final class FileTreeModel: ObservableObject {
     /// Cached git info per directory (project root paths)
     @Published var gitInfoCache: [String: GitInfo] = [:]
 
+    /// When non-nil, the folder tree is filtered to these paths (folders whose name
+    /// matches the active query, plus their ancestor folders). nil means no active search.
+    @Published private(set) var searchMatchPaths: Set<String>? = nil
+
     var visibleHiddenFolders: Set<String> {
         let raw = UserDefaults.standard.string(forKey: "fileExplorerVisibleHiddenFolders") ?? ""
         return Set(raw.split(separator: ",").map { String($0.trimmingCharacters(in: .whitespaces)) }.filter { !$0.isEmpty })
@@ -517,9 +521,149 @@ final class FileTreeModel: ObservableObject {
     // MARK: - Flat visible nodes
 
     func flatVisibleEntries(workspaces: [WorkspaceDirectoryInfo], showAllSessions: Bool) -> [FileTreeEntry] {
+        if let matchPaths = searchMatchPaths {
+            return searchEntries(matchPaths: matchPaths)
+        }
         guard let root = rootNode else { return [] }
         var entries: [FileTreeEntry] = []
         appendEntries(for: root, into: &entries, workspaces: workspaces, showAllSessions: showAllSessions)
+        return entries
+    }
+
+    /// Recompute the folder filter for `query`. An empty query clears the filter. The
+    /// filesystem scan runs off the main actor and is bounded for responsiveness.
+    func runSearch(query: String) async {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            if searchMatchPaths != nil { searchMatchPaths = nil }
+            return
+        }
+        let root = (rootPath as NSString).standardizingPath
+        let needleSegments = trimmed.lowercased()
+            .split(separator: "/")
+            .map(String.init)
+            .filter { !$0.isEmpty }
+        guard !needleSegments.isEmpty else {
+            if searchMatchPaths != nil { searchMatchPaths = nil }
+            return
+        }
+        let hidden = visibleHiddenFolders
+        let matches = await Task.detached(priority: .userInitiated) {
+            FileTreeModel.scanMatchingFolders(root: root, needleSegments: needleSegments, visibleHidden: hidden)
+        }.value
+        if Task.isCancelled { return }
+        var paths: Set<String> = [root]
+        for match in matches {
+            paths.insert(match)
+            var parent = (match as NSString).deletingLastPathComponent
+            while parent.count > root.count, parent.hasPrefix(root) {
+                paths.insert(parent)
+                parent = (parent as NSString).deletingLastPathComponent
+            }
+        }
+        searchMatchPaths = paths
+    }
+
+    /// Bounded recursive scan for folders matching `needleSegments` (case-insensitive,
+    /// path-aware), honoring the same exclusions as the tree. Runs off-main.
+    nonisolated private static func scanMatchingFolders(
+        root: String,
+        needleSegments: [String],
+        visibleHidden: Set<String>,
+        maxDepth: Int = 8,
+        maxResults: Int = 500,
+        maxVisited: Int = 15000
+    ) -> Set<String> {
+        guard !needleSegments.isEmpty else { return [] }
+        let fm = FileManager.default
+        var results: Set<String> = []
+        // Breadth-first (FIFO via a head index) so shallow folders — e.g. project dirs a
+        // couple levels under the root — are reached before the visit budget is spent
+        // diving deep into one large subtree (e.g. ~/Library).
+        var queue: [(path: String, components: [String], depth: Int)] = [(root, [], 0)]
+        var head = 0
+        while head < queue.count {
+            if results.count >= maxResults || head >= maxVisited { break }
+            let (dir, components, depth) = queue[head]
+            head += 1
+            guard depth < maxDepth else { continue }
+            guard let contents = try? fm.contentsOfDirectory(
+                at: URL(fileURLWithPath: dir),
+                includingPropertiesForKeys: [.isDirectoryKey],
+                options: []
+            ) else { continue }
+            for url in contents {
+                let name = url.lastPathComponent
+                if excludedDirectories.contains(name) { continue }
+                if name.hasPrefix(".") && !visibleHidden.contains(name) { continue }
+                let isDirectory = (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory ?? false
+                guard isDirectory else { continue }
+                let childComponents = components + [name.lowercased()]
+                if pathMatches(components: childComponents, needleSegments: needleSegments) {
+                    results.insert(url.path)
+                }
+                queue.append((url.path, childComponents, depth + 1))
+            }
+        }
+        return results
+    }
+
+    /// Matches when each needle segment is a substring of a distinct path component in
+    /// order, and the final segment matches the folder's own name. So "wamo/pos" matches a
+    /// folder named "*pos*" living under an ancestor named "*wamo*"; a single "pos" matches
+    /// any folder named "*pos*". Components are expected pre-lowercased.
+    nonisolated private static func pathMatches(components: [String], needleSegments: [String]) -> Bool {
+        guard let lastSegment = needleSegments.last, let lastComponent = components.last else {
+            return false
+        }
+        guard lastComponent.contains(lastSegment) else { return false }
+        let priorSegments = needleSegments.dropLast()
+        if priorSegments.isEmpty { return true }
+        var index = 0
+        let ancestors = components.dropLast()
+        for segment in priorSegments {
+            var found = false
+            while index < ancestors.count {
+                let component = ancestors[index]
+                index += 1
+                if component.contains(segment) {
+                    found = true
+                    break
+                }
+            }
+            if !found { return false }
+        }
+        return true
+    }
+
+    private func searchEntries(matchPaths: Set<String>) -> [FileTreeEntry] {
+        let root = (rootPath as NSString).standardizingPath
+        let parents = Set(matchPaths.map { ($0 as NSString).deletingLastPathComponent })
+        var entries: [FileTreeEntry] = []
+        for path in matchPaths.sorted() {
+            let depth: Int
+            if path == root {
+                depth = 0
+            } else if path.hasPrefix(root + "/") {
+                depth = String(path.dropFirst(root.count + 1)).split(separator: "/").count
+            } else {
+                depth = (path as NSString).pathComponents.count
+            }
+            let name = (path as NSString).lastPathComponent
+            let normalized = (path as NSString).standardizingPath
+            entries.append(FileTreeEntry(
+                id: path,
+                name: name.isEmpty ? path : name,
+                path: path,
+                depth: depth,
+                kind: .folder(
+                    isExpanded: true,
+                    hasChildren: parents.contains(path),
+                    sessionCount: 0,
+                    gitBranch: gitInfoCache[normalized]?.branch
+                )
+            ))
+        }
         return entries
     }
 

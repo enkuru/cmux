@@ -889,12 +889,12 @@ final class TerminalNotificationStore: ObservableObject {
             return true
         }
 
-        let isActiveTab = AppDelegate.shared?.tabManager?.selectedTabId == tabId
-        let focusedSurfaceId = AppDelegate.shared?.tabManager?.focusedSurfaceId(for: tabId)
-        let isFocusedSurface = surfaceId == nil || focusedSurfaceId == surfaceId
-        let isFocusedPanel = isActiveTab && isFocusedSurface
-        let isAppFocused = AppFocusState.isAppFocused()
-        let shouldSuppressExternalDelivery = isAppFocused && isFocusedPanel
+        // Suppress the intrusive system banner whenever cmux is frontmost (a main
+        // terminal window is key), regardless of which workspace/pane fired the
+        // notification. The in-app sidebar indicator and suppressed feedback still
+        // surface it; a desktop banner is redundant when the user is already looking
+        // at cmux. When cmux is in the background, the banner is delivered as usual.
+        let shouldSuppressExternalDelivery = AppFocusState.isAppFocused()
 
         if WorkspaceAutoReorderSettings.isEnabled() {
             AppDelegate.shared?.tabManager?.moveTabToTopForNotification(tabId)
