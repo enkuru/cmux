@@ -182,6 +182,38 @@ final class TerminalPanel: Panel, ObservableObject {
         surface.sendText(text)
     }
 
+    /// Read the currently visible viewport text from the terminal surface.
+    /// Returns nil if the runtime surface is not attached yet.
+    func readVisibleText() -> String? {
+        guard let surface = surface.surface else { return nil }
+
+        let topLeft = ghostty_point_s(
+            tag: GHOSTTY_POINT_VIEWPORT,
+            coord: GHOSTTY_POINT_COORD_TOP_LEFT,
+            x: 0,
+            y: 0
+        )
+        let bottomRight = ghostty_point_s(
+            tag: GHOSTTY_POINT_VIEWPORT,
+            coord: GHOSTTY_POINT_COORD_BOTTOM_RIGHT,
+            x: 0,
+            y: 0
+        )
+        let selection = ghostty_selection_s(
+            top_left: topLeft,
+            bottom_right: bottomRight,
+            rectangle: false
+        )
+
+        var text = ghostty_text_s()
+        guard ghostty_surface_read_text(surface, selection, &text) else { return nil }
+        defer { ghostty_surface_free_text(surface, &text) }
+
+        guard let ptr = text.text, text.text_len > 0 else { return "" }
+        let rawData = Data(bytes: ptr, count: Int(text.text_len))
+        return String(decoding: rawData, as: UTF8.self)
+    }
+
     func performBindingAction(_ action: String) -> Bool {
         surface.performBindingAction(action)
     }

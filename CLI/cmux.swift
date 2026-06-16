@@ -328,6 +328,13 @@ private struct ClaudeHookSessionRecord: Codable {
     var lastBody: String?
     var startedAt: TimeInterval
     var updatedAt: TimeInterval
+    // Tracks the last notification actually relayed to cmux so repeated
+    // identical hook fires within one waiting episode are suppressed. Cleared
+    // when the user submits a new prompt. Optional + defaulted so old state
+    // files (missing these keys) decode cleanly.
+    var lastNotifiedSubtitle: String? = nil
+    var lastNotifiedBody: String? = nil
+    var lastNotifiedAt: TimeInterval? = nil
 }
 
 private struct ClaudeHookSessionStoreFile: Codable {
@@ -411,6 +418,47 @@ private final class ClaudeHookSessionStore {
         }
     }
 
+    /// Records the notification about to be relayed for `sessionId` and reports
+    /// whether an identical one (same subtitle+body) was already relayed within
+    /// `window` seconds. Claude Code fires the Notification/Stop hook several
+    /// times for a single waiting episode; this lets the caller relay it once.
+    /// Returns false when there is no session record yet (can't dedup safely).
+    func registerNotificationAndCheckDuplicate(
+        sessionId: String,
+        subtitle: String,
+        body: String,
+        window: TimeInterval
+    ) throws -> Bool {
+        let normalized = normalizeSessionId(sessionId)
+        guard !normalized.isEmpty else { return false }
+        return try withLockedState { state in
+            guard var record = state.sessions[normalized] else { return false }
+            let now = Date().timeIntervalSince1970
+            let isDuplicate = record.lastNotifiedSubtitle == subtitle
+                && record.lastNotifiedBody == body
+                && now - (record.lastNotifiedAt ?? 0) < window
+            record.lastNotifiedSubtitle = subtitle
+            record.lastNotifiedBody = body
+            record.lastNotifiedAt = now
+            record.updatedAt = now
+            state.sessions[normalized] = record
+            return isDuplicate
+        }
+    }
+
+    /// Clears notification dedup tracking for a session so the next identical
+    /// alert is relayed fresh (e.g. after the user submits a new prompt).
+    func resetNotificationTracking(sessionId: String?) throws {
+        guard let normalized = normalizeOptional(sessionId) else { return }
+        try withLockedState { state in
+            guard var record = state.sessions[normalized] else { return }
+            record.lastNotifiedSubtitle = nil
+            record.lastNotifiedBody = nil
+            record.lastNotifiedAt = nil
+            state.sessions[normalized] = record
+        }
+    }
+
     func consume(
         sessionId: String?,
         workspaceId: String?,
@@ -457,6 +505,12 @@ private final class ClaudeHookSessionStore {
 
     private func withLockedState<T>(_ body: (inout ClaudeHookSessionStoreFile) throws -> T) throws -> T {
         let lockPath = statePath + ".lock"
+        let lockURL = URL(fileURLWithPath: lockPath)
+        try fileManager.createDirectory(
+            at: lockURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true,
+            attributes: nil
+        )
         let fd = open(lockPath, O_CREAT | O_RDWR, mode_t(S_IRUSR | S_IWUSR))
         if fd < 0 {
             throw CLIError(message: "Failed to open Claude hook state lock: \(lockPath)")
@@ -10105,6 +10159,22 @@ struct CMUXCLI {
         }
     }
 
+    /// Appends a diagnostic line to /tmp/cmux-hook-debug.log so we can verify what each
+    /// Claude hook invocation actually receives (session id presence) and how dedup
+    /// resolved. Temporary instrumentation while chasing duplicate notifications.
+    private func claudeHookDebugLog(_ message: String) {
+        let line = "\(String(format: "%.3f", Date().timeIntervalSince1970)) \(message)\n"
+        guard let data = line.data(using: .utf8) else { return }
+        let path = "/tmp/cmux-hook-debug.log"
+        if let handle = FileHandle(forWritingAtPath: path) {
+            defer { try? handle.close() }
+            _ = try? handle.seekToEnd()
+            try? handle.write(contentsOf: data)
+        } else {
+            try? data.write(to: URL(fileURLWithPath: path))
+        }
+    }
+
     private func runClaudeHook(
         commandArgs: [String],
         client: SocketClient,
@@ -10118,6 +10188,10 @@ struct CMUXCLI {
         let rawInput = String(data: FileHandle.standardInput.readDataToEndOfFile(), encoding: .utf8) ?? ""
         let parsedInput = parseClaudeHookInput(rawInput: rawInput)
         let sessionStore = ClaudeHookSessionStore()
+        // Suppress identical Notification/Stop hook fires for the same session
+        // within this window; the prompt-submit hook resets it when the user
+        // replies, so distinct waiting episodes still notify.
+        let notificationDedupWindow: TimeInterval = 10
         telemetry.breadcrumb(
             "claude-hook.input",
             data: [
@@ -10129,6 +10203,19 @@ struct CMUXCLI {
         )
         let fallbackWorkspaceId = try resolveWorkspaceIdForClaudeHook(workspaceArg, client: client)
         let fallbackSurfaceId = try? resolveSurfaceId(surfaceArg, workspaceId: fallbackWorkspaceId, client: client)
+
+        // Notification dedup is keyed by a stable per-stream identifier. Claude's
+        // session_id is preferred, but real hook inputs frequently arrive WITHOUT one —
+        // in that case the dedup record was never created and every alert was relayed.
+        // Fall back to the surface (stable per terminal), then the workspace, so identical
+        // alerts collapse even when session_id is missing.
+        let resolvedSessionId = parsedInput.sessionId.flatMap { $0.isEmpty ? nil : $0 }
+        let dedupStreamKey: String = {
+            if let resolvedSessionId { return resolvedSessionId }
+            if let surface = surfaceArg, !surface.isEmpty { return "surface:\(surface)" }
+            return "workspace:\(fallbackWorkspaceId)"
+        }()
+        claudeHookDebugLog("dispatch sub=\(subcommand) hasSessionId=\(resolvedSessionId != nil) key=\(dedupStreamKey) rawLen=\(rawInput.count)")
 
         switch subcommand {
         case "session-start", "active":
@@ -10187,9 +10274,9 @@ struct CMUXCLI {
                 parsedInput: parsedInput,
                 sessionRecord: (try? sessionStore.lookup(sessionId: parsedInput.sessionId ?? ""))
             )
-            if let sessionId = parsedInput.sessionId, let completion {
+            if let completion {
                 try? sessionStore.upsert(
-                    sessionId: sessionId,
+                    sessionId: dedupStreamKey,
                     workspaceId: workspaceId,
                     surfaceId: surfaceId ?? "",
                     cwd: parsedInput.cwd,
@@ -10208,7 +10295,18 @@ struct CMUXCLI {
                 let subtitle = sanitizeNotificationField(completion.subtitle)
                 let body = sanitizeNotificationField(completion.body)
                 let payload = "\(title)|\(subtitle)|\(body)"
-                _ = try? sendV1Command("notify_target \(workspaceId) \(resolvedSurface) \(payload)", client: client)
+                let isDuplicate = (try? sessionStore.registerNotificationAndCheckDuplicate(
+                    sessionId: dedupStreamKey,
+                    subtitle: subtitle,
+                    body: body,
+                    window: notificationDedupWindow
+                )) ?? false
+                claudeHookDebugLog("stop key=\(dedupStreamKey) dup=\(isDuplicate) subtitle=\(subtitle)")
+                if isDuplicate {
+                    telemetry.breadcrumb("claude-hook.stop.deduped")
+                } else {
+                    _ = try? sendV1Command("notify_target \(workspaceId) \(resolvedSurface) \(payload)", client: client)
+                }
             }
 
             try setClaudeStatus(
@@ -10229,6 +10327,7 @@ struct CMUXCLI {
                 workspaceId = mappedWorkspace
             }
             _ = try sendV1Command("clear_notifications --tab=\(workspaceId)", client: client)
+            try? sessionStore.resetNotificationTracking(sessionId: dedupStreamKey)
             try setClaudeStatus(
                 client: client,
                 workspaceId: workspaceId,
@@ -10268,18 +10367,29 @@ struct CMUXCLI {
             let body = sanitizeNotificationField(summary.body)
             let payload = "\(title)|\(subtitle)|\(body)"
 
-            if let sessionId = parsedInput.sessionId {
-                try? sessionStore.upsert(
-                    sessionId: sessionId,
-                    workspaceId: workspaceId,
-                    surfaceId: surfaceId,
-                    cwd: parsedInput.cwd,
-                    lastSubtitle: summary.subtitle,
-                    lastBody: summary.body
-                )
-            }
+            try? sessionStore.upsert(
+                sessionId: dedupStreamKey,
+                workspaceId: workspaceId,
+                surfaceId: surfaceId,
+                cwd: parsedInput.cwd,
+                lastSubtitle: summary.subtitle,
+                lastBody: summary.body
+            )
 
-            let response = try client.send(command: "notify_target \(workspaceId) \(surfaceId) \(payload)")
+            let isDuplicate = (try? sessionStore.registerNotificationAndCheckDuplicate(
+                sessionId: dedupStreamKey,
+                subtitle: subtitle,
+                body: body,
+                window: notificationDedupWindow
+            )) ?? false
+            claudeHookDebugLog("notification key=\(dedupStreamKey) dup=\(isDuplicate) subtitle=\(subtitle)")
+
+            var response = "OK"
+            if isDuplicate {
+                telemetry.breadcrumb("claude-hook.notification.deduped")
+            } else {
+                response = try client.send(command: "notify_target \(workspaceId) \(surfaceId) \(payload)")
+            }
             _ = try? setClaudeStatus(
                 client: client,
                 workspaceId: workspaceId,
@@ -10675,7 +10785,6 @@ struct CMUXCLI {
             firstString(in: object, keys: ["message", "body", "text", "prompt", "error", "description"]),
             firstString(in: nested, keys: ["message", "body", "text", "prompt", "error", "description"])
         ]
-        let session = firstString(in: object, keys: ["session_id", "sessionId"])
         let message = messageCandidates.compactMap { $0 }.first ?? "Claude needs your input"
         let normalizedMessage = normalizedSingleLine(message)
         let signal = signalParts.compactMap { $0 }.joined(separator: " ")

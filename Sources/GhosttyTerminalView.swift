@@ -6741,7 +6741,7 @@ final class GhosttySurfaceScrollView: NSView {
         imageTransferCancelButton = NSButton(frame: .zero)
         scrollView.hasVerticalScroller = true
         scrollView.hasHorizontalScroller = false
-        scrollView.autohidesScrollers = false
+        scrollView.autohidesScrollers = true
         scrollView.usesPredominantAxisScrolling = true
         scrollView.scrollerStyle = .overlay
         scrollView.drawsBackground = false
@@ -8228,7 +8228,19 @@ final class GhosttySurfaceScrollView: NSView {
             ) else {
                 return
             }
-            window.makeKeyAndOrderFront(nil)
+            // Let AppKit/SwiftUI order the window through the normal launch or click
+            // path. Forcing `makeKeyAndOrderFront` from the focus reconciler can run
+            // the primary WindowGroup's constraint update while SwiftUI is already in
+            // a layout pass on macOS 26, which AppKit escalates through
+            // `+[NSApplication _crashOnException:]`.
+#if DEBUG
+            dlog(
+                "focus.ensure.defer surface=\(surfaceView.terminalSurface?.id.uuidString.prefix(5) ?? "nil") " +
+                "reason=window_not_key"
+            )
+#endif
+            scheduleAutomaticFirstResponderApply(reason: "ensureFocus.windowNotKey")
+            return
         }
         let result = window.makeFirstResponder(surfaceView)
 #if DEBUG

@@ -8710,10 +8710,12 @@ final class Workspace: Identifiable, ObservableObject {
     }
 
     private func flushWorkspaceWindowLayouts() {
-        for window in NSApp.windows {
-            window.contentView?.layoutSubtreeIfNeeded()
-            window.contentView?.displayIfNeeded()
-        }
+        // Intentionally do not force window layout from this follow-up. On macOS 26
+        // both `layoutSubtreeIfNeeded()` and `displayIfNeeded()` can re-enter the
+        // primary SwiftUI WindowGroup's constraint update during launch, tripping
+        // AppKit's update-constraints budget and escalating through
+        // NSApplication._crashOnException. The follow-up retry loop below observes
+        // natural layout convergence instead.
     }
 
     private func browserPortalAnchorReady(for browserPanel: BrowserPanel) -> Bool {
@@ -8869,11 +8871,6 @@ final class Workspace: Identifiable, ObservableObject {
     /// This keeps AppKit bounds and Ghostty surface sizes in sync in the next runloop turn.
     private func reconcileTerminalGeometryPass() -> Bool {
         var needsFollowUpPass = false
-
-        // Flush pending AppKit layout first so terminal-host bounds reflect latest split topology.
-        for window in NSApp.windows {
-            window.contentView?.layoutSubtreeIfNeeded()
-        }
 
         for panel in panels.values {
             guard let terminalPanel = panel as? TerminalPanel else { continue }

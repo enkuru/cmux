@@ -544,6 +544,12 @@ final class ScriptTerminal: NSObject {
         return workspace?.panelDirectories[terminalId] ?? terminal?.directory ?? ""
     }
 
+    @objc(contents)
+    var contents: String {
+        guard NSApp.isAppleScriptEnabled else { return "" }
+        return terminal?.readVisibleText() ?? ""
+    }
+
     func input(text: String) -> Bool {
         guard NSApp.isAppleScriptEnabled,
               let terminal else {

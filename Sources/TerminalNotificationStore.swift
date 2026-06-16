@@ -611,14 +611,7 @@ enum AppFocusState {
         if let overrideIsFocused {
             return overrideIsFocused
         }
-        guard NSApp.isActive else { return false }
-        guard let keyWindow = NSApp.keyWindow, keyWindow.isKeyWindow else { return false }
-        // Only treat the app as "focused" for notification suppression when a main terminal window
-        // is key. If Settings/About/debug panels are key, we still want notifications to show.
-        if let raw = keyWindow.identifier?.rawValue {
-            return raw == "cmux.main" || raw.hasPrefix("cmux.main.")
-        }
-        return false
+        return NSApp.isActive
     }
 }
 
@@ -733,6 +726,21 @@ final class TerminalNotificationStore: ObservableObject {
         store.playSuppressedNotificationFeedback(for: notification)
     }
     private var indexes = NotificationIndexes()
+
+    // Callers (Claude hooks, OSC sequences, socket `notify`) can fire the same
+    // notification several times in quick succession. The visible list already
+    // collapses to one entry per (tab, surface), but the banner/sound feedback
+    // fired on every call — so the user saw/heard it 3-4 times. Track the last
+    // delivered notification and suppress identical repeats within a short window.
+    private struct DeliveredFeedbackKey: Equatable {
+        let tabId: UUID
+        let surfaceId: UUID?
+        let title: String
+        let subtitle: String
+        let body: String
+    }
+    private var lastDeliveredFeedback: (key: DeliveredFeedbackKey, at: Date)?
+    private let feedbackDedupWindow: TimeInterval = 2.0
 
     private init() {
         indexes = Self.buildIndexes(for: notifications)
@@ -889,11 +897,11 @@ final class TerminalNotificationStore: ObservableObject {
             return true
         }
 
-        // Suppress the intrusive system banner whenever cmux is frontmost (a main
-        // terminal window is key), regardless of which workspace/pane fired the
-        // notification. The in-app sidebar indicator and suppressed feedback still
-        // surface it; a desktop banner is redundant when the user is already looking
-        // at cmux. When cmux is in the background, the banner is delivered as usual.
+        // Suppress external notification feedback whenever cmux is frontmost,
+        // regardless of which workspace/pane fired the notification. The in-app
+        // sidebar indicator and notification list still update; a banner, sound,
+        // or custom command is redundant when the user is already looking at cmux.
+        // When cmux is in the background, delivery happens as usual.
         let shouldSuppressExternalDelivery = AppFocusState.isAppFocused()
 
         if WorkspaceAutoReorderSettings.isEnabled() {
@@ -916,11 +924,30 @@ final class TerminalNotificationStore: ObservableObject {
             center.removeDeliveredNotificationsOffMain(withIdentifiers: idsToClear)
             center.removePendingNotificationRequestsOffMain(withIdentifiers: idsToClear)
         }
-        if shouldSuppressExternalDelivery {
-            suppressedNotificationFeedbackHandler(self, notification)
+        let feedbackKey = DeliveredFeedbackKey(
+            tabId: tabId,
+            surfaceId: surfaceId,
+            title: title,
+            subtitle: subtitle,
+            body: body
+        )
+        let now = Date()
+        let isDuplicateFeedback: Bool
+        if let last = lastDeliveredFeedback,
+           last.key == feedbackKey,
+           now.timeIntervalSince(last.at) < feedbackDedupWindow {
+            isDuplicateFeedback = true
         } else {
-            notificationDeliveryHandler(self, notification)
+            isDuplicateFeedback = false
         }
+        lastDeliveredFeedback = (feedbackKey, now)
+
+        // The list/dock badge above is already updated; only skip the redundant
+        // banner/sound so an identical notification alerts the user just once.
+        guard !isDuplicateFeedback else { return }
+
+        guard !shouldSuppressExternalDelivery else { return }
+        notificationDeliveryHandler(self, notification)
     }
 
     func markRead(id: UUID) {

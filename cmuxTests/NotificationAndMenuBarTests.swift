@@ -401,7 +401,7 @@ final class NotificationDockBadgeTests: XCTestCase {
         }
     }
 
-    func testFocusedTerminalNotificationStillRunsLocalSoundFeedbackWhenExternalDeliveryIsSuppressed() throws {
+    func testFocusedTerminalNotificationOnlyUpdatesUnreadStateWhenExternalDeliveryIsSuppressed() throws {
         guard let appDelegate = AppDelegate.shared else {
             XCTFail("AppDelegate.shared must be set for this test")
             return
@@ -448,14 +448,13 @@ final class NotificationDockBadgeTests: XCTestCase {
             body: ""
         )
 
-        let createdNotificationID = try XCTUnwrap(store.notifications.first?.id)
+        _ = try XCTUnwrap(store.notifications.first?.id)
         XCTAssertTrue(store.hasUnreadNotification(forTabId: workspace.id, surfaceId: terminalPanel.id))
         XCTAssertTrue(deliveredNotificationIDs.isEmpty)
-        XCTAssertEqual(localFeedbackNotificationIDs.count, 1)
-        XCTAssertEqual(localFeedbackNotificationIDs, [createdNotificationID])
+        XCTAssertTrue(localFeedbackNotificationIDs.isEmpty)
     }
 
-    func testFocusedTerminalSuppressedNotificationRunsCustomCommand() throws {
+    func testFocusedTerminalSuppressedNotificationDoesNotRunCustomCommand() throws {
         guard let appDelegate = AppDelegate.shared else {
             XCTFail("AppDelegate.shared must be set for this test")
             return
@@ -521,21 +520,14 @@ final class NotificationDockBadgeTests: XCTestCase {
             body: "Focused body"
         )
 
-        let commandFinished = XCTNSPredicateExpectation(
+        XCTAssertTrue(deliveredNotificationIDs.isEmpty)
+        let commandWait = XCTNSPredicateExpectation(
             predicate: NSPredicate { _, _ in
                 FileManager.default.fileExists(atPath: commandOutputURL.path)
             },
             object: NSObject()
         )
-        XCTAssertEqual(XCTWaiter().wait(for: [commandFinished], timeout: 2.0), .completed)
-        XCTAssertTrue(deliveredNotificationIDs.isEmpty)
-
-        let output = try String(contentsOf: commandOutputURL, encoding: .utf8)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        let expectedTitle = Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
-            ?? Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String
-            ?? "cmux"
-        XCTAssertEqual(output.components(separatedBy: "\n"), [expectedTitle, "Focused subtitle", "Focused body"])
+        XCTAssertEqual(XCTWaiter().wait(for: [commandWait], timeout: 0.2), .timedOut)
     }
 
     func testNotificationAuthorizationStateMappingCoversKnownUNAuthorizationStatuses() {

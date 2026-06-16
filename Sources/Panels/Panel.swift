@@ -40,10 +40,10 @@ struct FocusFlashSegment: Equatable {
 }
 
 enum FocusFlashPattern {
-    static let values: [Double] = [0, 1, 0, 1, 0]
-    static let keyTimes: [Double] = [0, 0.25, 0.5, 0.75, 1]
-    static let duration: TimeInterval = 0.9
-    static let curves: [FocusFlashCurve] = [.easeOut, .easeIn, .easeOut, .easeIn]
+    static let values: [Double] = [0, 1, 0]
+    static let keyTimes: [Double] = [0, 0.5, 1]
+    static let duration: TimeInterval = 0.5
+    static let curves: [FocusFlashCurve] = [.easeOut, .easeIn]
     static let ringInset: Double = 6
     static let ringCornerRadius: Double = 10
 

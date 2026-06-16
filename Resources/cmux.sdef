@@ -89,6 +89,9 @@
       <property name="working directory" code="CMwd" type="text" access="r" description="Current working directory for the terminal process.">
         <cocoa key="workingDirectory"/>
       </property>
+      <property name="contents" code="CMct" type="text" access="r" description="The visible viewport text in this terminal panel.">
+        <cocoa key="contents"/>
+      </property>
       <responds-to command="split">
         <cocoa method="handleSplitCommand:"/>
       </responds-to>
