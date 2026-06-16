@@ -117,6 +117,15 @@ class UpdateController {
         do {
             try updater.start()
             didStartUpdater = true
+            // Personal fork: never auto-pull the official upstream release. The public
+            // appcast (manaflow-ai/cmux) is far ahead of this customized build, so an
+            // automatic check would offer the official build and `installUpdate` would
+            // replace these local features (happened 2026-06-16). Force automatic checks
+            // off on every launch — this overrides any stale `SUEnableAutomaticChecks`
+            // user default left enabled on existing installs. Updates are done by
+            // rebuilding from this branch; the manual "Check for Updates…" menu item
+            // still works for when an upstream pull is actually intended.
+            updater.automaticallyChecksForUpdates = false
             let interval = Int(updater.updateCheckInterval.rounded())
             UpdateLogStore.shared.append(
                 "updater started (autoChecks=\(updater.automaticallyChecksForUpdates), interval=\(interval)s, autoDownloads=\(updater.automaticallyDownloadsUpdates))"
