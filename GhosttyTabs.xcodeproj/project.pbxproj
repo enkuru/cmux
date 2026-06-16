@@ -64,6 +64,7 @@
 		A500120B /* UpdateTestSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5001221 /* UpdateTestSupport.swift */; };
 		A500120E /* UpdateTestURLProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5001224 /* UpdateTestURLProtocol.swift */; };
 		A500120C /* WindowAccessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5001222 /* WindowAccessor.swift */; };
+			CE000001 /* CmuxExceptionCatcher.m in Sources */ = {isa = PBXBuildFile; fileRef = CE000002 /* CmuxExceptionCatcher.m */; };
 		A500120D /* UpdateLogStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5001223 /* UpdateLogStore.swift */; };
 		A5001207 /* UpdatePopoverView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5001217 /* UpdatePopoverView.swift */; };
 		A5001208 /* UpdateTitlebarAccessory.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5001218 /* UpdateTitlebarAccessory.swift */; };
@@ -252,6 +253,8 @@
 		A5001218 /* UpdateTitlebarAccessory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Update/UpdateTitlebarAccessory.swift; sourceTree = "<group>"; };
 		A5001219 /* WindowToolbarController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowToolbarController.swift; sourceTree = "<group>"; };
 		A5001222 /* WindowAccessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowAccessor.swift; sourceTree = "<group>"; };
+			CE000002 /* CmuxExceptionCatcher.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = CmuxExceptionCatcher.m; sourceTree = SOURCE_ROOT; };
+			CE000003 /* CmuxExceptionCatcher.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = CmuxExceptionCatcher.h; sourceTree = SOURCE_ROOT; };
 		A5001223 /* UpdateLogStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Update/UpdateLogStore.swift; sourceTree = "<group>"; };
 		A5001241 /* WindowDecorationsController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowDecorationsController.swift; sourceTree = "<group>"; };
 		A5001611 /* SessionPersistence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionPersistence.swift; sourceTree = "<group>"; };
@@ -490,6 +493,8 @@
 				A5001219 /* WindowToolbarController.swift */,
 				A5001241 /* WindowDecorationsController.swift */,
 				A5001222 /* WindowAccessor.swift */,
+				CE000002 /* CmuxExceptionCatcher.m */,
+				CE000003 /* CmuxExceptionCatcher.h */,
 				A5001611 /* SessionPersistence.swift */,
 				A5001661 /* ProjectGroup.swift */,
 				A5001671 /* MissionControlView.swift */,
@@ -802,6 +807,7 @@
 				A5001209 /* WindowToolbarController.swift in Sources */,
 				A5001240 /* WindowDecorationsController.swift in Sources */,
 				A500120C /* WindowAccessor.swift in Sources */,
+				CE000001 /* CmuxExceptionCatcher.m in Sources */,
 				A5001610 /* SessionPersistence.swift in Sources */,
 				A5001660 /* ProjectGroup.swift in Sources */,
 				A5001670 /* MissionControlView.swift in Sources */,

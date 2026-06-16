@@ -908,8 +908,22 @@ final class TitlebarControlsAccessoryViewController: NSTitlebarAccessoryViewCont
         guard !pendingSizeUpdate else { return }
         pendingSizeUpdate = true
         DispatchQueue.main.async { [weak self] in
-            self?.pendingSizeUpdate = false
-            self?.updateSize()
+            guard let self else { return }
+            self.pendingSizeUpdate = false
+            // `updateSize()` mutates `preferredContentSize`, which on macOS 26 can
+            // raise AppKit's over-budget "Update Constraints in Window" NSException
+            // while a layout feedback churns the window. This runs inside a
+            // libdispatch block, so an uncaught ObjC exception would reach
+            // `_dispatch_client_callout` and call `std::terminate`, aborting the
+            // app on launch. Firewall it with an ObjC `@try/@catch`; a skipped size
+            // update is re-scheduled by the next layout pass and is harmless.
+            if let caught = cmux_runCatchingNSException({ self.updateSize() }) {
+#if DEBUG
+                NSLog("cmux: titlebarControls.updateSize suppressed NSException: %@", caught.name.rawValue)
+#else
+                _ = caught
+#endif
+            }
         }
     }
 
@@ -963,18 +977,28 @@ final class TitlebarControlsAccessoryViewController: NSTitlebarAccessoryViewCont
             return
         }
         lastAppliedLayoutSnapshot = nextLayoutSnapshot
-        preferredContentSize = NSSize(width: contentSize.width, height: containerHeight)
+        // Only assign when the value actually changes. Each `preferredContentSize`
+        // write posts an "update constraints" pass to the window; redundant writes
+        // can exhaust AppKit's per-cycle budget on macOS 26 and abort the app.
+        let nextPreferred = NSSize(width: contentSize.width, height: containerHeight)
+        if preferredContentSize != nextPreferred {
+            preferredContentSize = nextPreferred
+        }
         containerView.frame = NSRect(x: 0, y: 0, width: contentSize.width, height: containerHeight)
         hostingView.frame = NSRect(x: 0, y: yOffset, width: contentSize.width, height: contentSize.height)
     }
 
     private func applyWorkspaceTitlebarVisibility() {
         let shouldShow = showsWorkspaceTitlebar
-        view.isHidden = !shouldShow
+        if view.isHidden != !shouldShow {
+            view.isHidden = !shouldShow
+        }
         if !shouldShow {
-            preferredContentSize = .zero
-            containerView.frame = .zero
-            hostingView.frame = .zero
+            // Guard each assignment: writing these unconditionally posts redundant
+            // window constraint-update passes (see `updateSize`).
+            if preferredContentSize != .zero { preferredContentSize = .zero }
+            if containerView.frame != .zero { containerView.frame = .zero }
+            if hostingView.frame != .zero { hostingView.frame = .zero }
         }
     }
 

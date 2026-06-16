@@ -336,6 +336,30 @@ struct cmuxApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView(updateViewModel: appDelegate.updateViewModel, windowId: primaryWindowId)
+                // macOS 26 launch-crash fix. The primary (WindowGroup) window's root
+                // SwiftUI NSHostingView enters a size<->safe-area AttributeGraph cycle
+                // on launch: computing `minSize` (`_sizeThatFits`) calls
+                // `updateSafeArea()` -> `setSafeAreaInsets`, which dirties the graph and
+                // re-marks the window for another "Update Constraints in Window" pass,
+                // overrunning AppKit's per-cycle budget and aborting with an uncaught
+                // NSException (exit 6, ~5s after launch). Detaching the root content
+                // from the safe area removes the safe-area attribute's dependents so the
+                // cycle can't form. (Additional windows use MainWindowHostingView, which
+                // pins safe area to zero for the same reason.)
+                .ignoresSafeArea()
+                // macOS 26 lock/occlusion crash mitigation. When the scene phase changes
+                // (screen lock, display sleep, window occlusion), SwiftUI's
+                // AppKitWindowController runs `updateRootView(updateBarAppearance:)`, which
+                // recomputes the root preference/layout tree to bridge a window toolbar/title
+                // into the scene. On macOS 26 that pass can over-release a layout node while
+                // rebuilding an HStack/VStack child buffer, faulting with EXC_BAD_ACCESS deep
+                // in `StackLayout.makeChildren()` (use-after-free; faulting address points at
+                // an unmapped, freed page). cmux draws its own titlebar (`.hiddenTitleBar` +
+                // `customTitlebar`) and never uses a SwiftUI window toolbar, so explicitly
+                // hiding it removes the scene bar-appearance bridging work from the
+                // phase-change path. (Secondary windows host content in AppKit
+                // `MainWindowHostingView`s that are not scene-managed and never hit this.)
+                .toolbar(.hidden, for: .windowToolbar)
                 .environmentObject(tabManager)
                 .environmentObject(notificationStore)
                 .environmentObject(sidebarState)

@@ -931,6 +931,7 @@ final class FileDropOverlayView: NSView {
 }
 
 var fileDropOverlayKey: UInt8 = 0
+private var fileDropOverlayInstallScheduledKey: UInt8 = 0
 private var commandPaletteWindowOverlayKey: UInt8 = 0
 let commandPaletteOverlayContainerIdentifier = NSUserInterfaceItemIdentifier("cmux.commandPalette.overlay.container")
 
@@ -1434,6 +1435,25 @@ func installFileDropOverlay(on window: NSWindow, tabManager: TabManager) {
     ])
 
     objc_setAssociatedObject(window, &fileDropOverlayKey, overlay, .OBJC_ASSOCIATION_RETAIN)
+}
+
+/// Defers overlay installation for SwiftUI update/layout callbacks.
+func scheduleFileDropOverlayInstall(on window: NSWindow, tabManager: TabManager) {
+    guard objc_getAssociatedObject(window, &fileDropOverlayKey) == nil,
+          objc_getAssociatedObject(window, &fileDropOverlayInstallScheduledKey) == nil else { return }
+
+    objc_setAssociatedObject(
+        window,
+        &fileDropOverlayInstallScheduledKey,
+        NSNumber(value: true),
+        .OBJC_ASSOCIATION_RETAIN_NONATOMIC
+    )
+    DispatchQueue.main.async { [weak window, weak tabManager] in
+        guard let window else { return }
+        objc_setAssociatedObject(window, &fileDropOverlayInstallScheduledKey, nil, .OBJC_ASSOCIATION_ASSIGN)
+        guard let tabManager else { return }
+        installFileDropOverlay(on: window, tabManager: tabManager)
+    }
 }
 
 struct ContentView: View {
@@ -2276,7 +2296,6 @@ struct ContentView: View {
     @AppStorage("bgGlassEnabled") private var bgGlassEnabled = false
     @AppStorage("debugTitlebarLeadingExtra") private var debugTitlebarLeadingExtra: Double = 0
 
-    @State private var titlebarLeadingInset: CGFloat = 12
     private var windowIdentifier: String { "cmux.main.\(windowId.uuidString)" }
     private var fakeTitlebarTextColor: Color {
         _ = titlebarThemeGeneration
@@ -2306,9 +2325,6 @@ struct ContentView: View {
             // Enable window dragging from the titlebar strip without making the entire content
             // view draggable (which breaks drag gestures like tab reordering).
             WindowDragHandleView()
-
-            TitlebarLeadingInsetReader(inset: $titlebarLeadingInset)
-                .allowsHitTesting(false)
 
             // Fullscreen controls stay pinned to the leading edge.
             if isFullScreen && !sidebarState.isVisible {
@@ -2437,41 +2453,44 @@ struct ContentView: View {
         return dir.isEmpty ? nil : dir
     }
 
-    private var contentAndSidebarLayout: AnyView {
-        let layout: AnyView
+    @ViewBuilder private var contentAndSidebarLayoutBase: some View {
         if sidebarBlendMode == SidebarBlendModeOption.withinWindow.rawValue {
             // Overlay mode: terminal extends full width, sidebar on top
             // This allows withinWindow blur to see the terminal content
-            layout = AnyView(
-                ZStack(alignment: .leading) {
-                    terminalContentWithSidebarDropOverlay
-                        .padding(.leading, sidebarState.isVisible ? sidebarWidth : 0)
-                    if sidebarState.isVisible {
-                        sidebarView
-                    }
+            ZStack(alignment: .leading) {
+                terminalContentWithSidebarDropOverlay
+                    .padding(.leading, sidebarState.isVisible ? sidebarWidth : 0)
+                if sidebarState.isVisible {
+                    sidebarView
                 }
-            )
+            }
         } else {
             // Standard HStack mode for behindWindow blur
-            layout = AnyView(
-                HStack(spacing: 0) {
-                    if sidebarState.isVisible {
-                        sidebarView
-                    }
-                    terminalContentWithSidebarDropOverlay
+            HStack(spacing: 0) {
+                if sidebarState.isVisible {
+                    sidebarView
                 }
-            )
+                terminalContentWithSidebarDropOverlay
+            }
         }
+    }
 
-        return AnyView(
-            layout
-                .overlay(alignment: .leading) {
-                    if sidebarState.isVisible {
-                        sidebarResizerOverlay
-                            .zIndex(1000)
-                    }
+    // macOS 26 crash hardening: keep this layout statically typed instead of
+    // type-erasing through `AnyView`. The sidebar/terminal stack sits directly on
+    // the root preference/layout path that SwiftUI recomputes on a scene-phase
+    // change (screen lock / occlusion). `AnyView` gives its child nodes a dynamic
+    // identity that the AttributeGraph cannot diff structurally, which aggravates
+    // the macOS 26 use-after-free in `StackLayout.makeChildren()`. A concrete
+    // `some View` (with `if/else` lowering to `_ConditionalContent`) keeps the
+    // stack's identity stable across those updates.
+    private var contentAndSidebarLayout: some View {
+        contentAndSidebarLayoutBase
+            .overlay(alignment: .leading) {
+                if sidebarState.isVisible {
+                    sidebarResizerOverlay
+                        .zIndex(1000)
                 }
-        )
+            }
     }
 
     var body: some View {
@@ -3030,7 +3049,7 @@ struct ContentView: View {
                 sidebarState: sidebarState,
                 sidebarSelectionState: sidebarSelectionState
             )
-            installFileDropOverlay(on: window, tabManager: tabManager)
+            scheduleFileDropOverlayInstall(on: window, tabManager: tabManager)
         }))
 
         return view
@@ -13804,60 +13823,6 @@ private struct SidebarVisualEffectBackground: NSViewRepresentable {
     }
 }
 
-
-/// Reads the leading inset required to clear traffic lights + left titlebar accessories.
-final class TitlebarLeadingInsetPassthroughView: NSView {
-    override var mouseDownCanMoveWindow: Bool { false }
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }
-}
-
-private struct TitlebarLeadingInsetReader: NSViewRepresentable {
-    @Binding var inset: CGFloat
-
-    func makeNSView(context: Context) -> NSView {
-        let view = TitlebarLeadingInsetPassthroughView()
-        view.setFrameSize(.zero)
-        return view
-    }
-
-    func updateNSView(_ nsView: NSView, context: Context) {
-        DispatchQueue.main.async {
-            guard let window = nsView.window else { return }
-            let controlsId = NSUserInterfaceItemIdentifier("cmux.titlebarControls")
-            // Start past the traffic lights
-            let trafficLightWidth: CGFloat = 78
-            var leading: CGFloat = trafficLightWidth
-            var hasControlsAccessory = false
-            // Add width of all left-aligned titlebar accessories
-            for accessory in window.titlebarAccessoryViewControllers
-                where accessory.layoutAttribute == .leading || accessory.layoutAttribute == .left {
-                leading += accessory.view.frame.width
-                if accessory.view.identifier == controlsId {
-                    hasControlsAccessory = true
-                }
-            }
-            // The controls cluster is a fixed-size `.left` accessory, but its live
-            // `frame.width` can read 0 before the titlebar has laid it out. When the
-            // sidebar is hidden the workspace title uses this inset, so a stale 0 made
-            // the title start at ~78 and overlap the buttons. Floor the inset to the
-            // deterministically computed cluster width (the same source of truth the
-            // accessory sizes itself with) so the title always clears the controls.
-            if hasControlsAccessory {
-                let style = TitlebarControlsStyle(
-                    rawValue: UserDefaults.standard.integer(forKey: "titlebarControlsStyle")
-                ) ?? .classic
-                let controlsWidth = titlebarControlsDefaultContentSize(
-                    for: style.config,
-                    hintTrailingInset: titlebarControlsHintTrailingInset()
-                ).width
-                leading = max(leading, trafficLightWidth + controlsWidth)
-            }
-            if leading != inset {
-                inset = leading
-            }
-        }
-    }
-}
 
 private struct SidebarBackdrop: View {
     @AppStorage("sidebarTintOpacity") private var sidebarTintOpacity = SidebarTintDefaults.opacity
